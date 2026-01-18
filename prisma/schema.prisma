@@ -1,0 +1,104 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "windows"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String       @id @default(uuid())
+  email          String       @unique
+  passwordHash   String
+  name           String?
+  role           String       @default("USER") // USER, ADMIN
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  projects       Project[]
+  licenseKeys    LicenseKey[]
+}
+
+model LicenseKey {
+  id        String   @id @default(uuid())
+  key       String   @unique // The actual license string
+  status    String   @default("ACTIVE") // ACTIVE, REVOKED, EXPIRED
+  planType  String   @default("TRIAL") // TRIAL, ANNUAL
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
+}
+
+model Project {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  data        String? // JSON string for generic metadata or L1 diagrams
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  l2Diagrams PoolSwimlaneDiagram[]
+  processKpis ProcessKPI[]
+  taskPis     TaskPI[]
+}
+
+model PoolSwimlaneDiagram {
+  id              String   @id @default(uuid())
+  name            String
+  description     String?
+  parentProcessId String // ID of the process node in L1 diagram
+  data            String? // JSON string for L2 nodes/edges
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// 1. Process Node KPIs (High Level)
+model ProcessKPI {
+  id             String   @id @default(uuid())
+  name           String
+  target         String
+  unit           String   @default("")
+  mingdaoFieldId String? // Binding Key for Mingdao
+
+  nodeId    String // ReactFlow Node ID
+  diagramId String
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// 2. Task PIs (Low Level SOP)
+model TaskPI {
+  id             String   @id @default(uuid())
+  stepName       String
+  roleName       String
+  taskDesc       String
+  piName         String
+  target         String
+  mingdaoFieldId String? // Binding Key for Mingdao
+
+  nodeId    String
+  diagramId String
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
