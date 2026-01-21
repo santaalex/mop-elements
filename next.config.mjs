@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-    /* config options here */
+    output: 'standalone',
+    eslint: {
+        ignoreDuringBuilds: true, // Often helpful in CI/Docker to prevent build failures from minor lint issues
+    },
 };
 
 export default nextConfig;

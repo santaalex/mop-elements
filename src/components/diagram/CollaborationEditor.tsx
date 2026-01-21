@@ -18,13 +18,15 @@ import {
     ConnectionLineType,
     MarkerType,
     reconnectEdge,
+    Node,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Box, LayoutTemplate } from 'lucide-react';
+import { Box, LayoutTemplate, Eye, Pencil, MousePointer2, Move, Undo2, Redo2 } from 'lucide-react';
 import GroupNode from './nodes/GroupNode';
 import ProcessNode from './nodes/ProcessNode';
 import CustomEdge from './edges/CustomEdge';
 import { saveDiagram, getDiagram } from '@/actions/diagram';
+import { useUndoRedo } from '@/hooks/useUndoRedo';
 
 const nodeTypes: NodeTypes = {
     group: GroupNode,
@@ -47,7 +49,8 @@ const initialNodesTemplate = [
         data: { label: '客户 (Customer)', color: 'blue' },
         style: { width: LAYER_WIDTH, height: 160 },
         selectable: true,
-        zIndex: -1, // Push to background
+        draggable: false, // Locked position
+        zIndex: -1,
     },
     // 2. Management Processes -> Violet
     {
@@ -56,6 +59,7 @@ const initialNodesTemplate = [
         position: { x: 0, y: 160 },
         data: { label: '管理类 (Management)', color: 'violet' },
         style: { width: LAYER_WIDTH, height: 240 },
+        draggable: false,
         zIndex: -1,
     },
     // 3. Core Business Processes -> Indigo
@@ -65,6 +69,7 @@ const initialNodesTemplate = [
         position: { x: 0, y: 160 + 240 },
         data: { label: '主业务 (Core Business)', color: 'indigo' },
         style: { width: LAYER_WIDTH, height: 450 },
+        draggable: false,
         zIndex: -1,
     },
     // 4. Support Processes -> Slate
@@ -74,6 +79,7 @@ const initialNodesTemplate = [
         position: { x: 0, y: 160 + 240 + 450 },
         data: { label: '支持类 (Support)', color: 'slate' },
         style: { width: LAYER_WIDTH, height: 240 },
+        draggable: false,
         zIndex: -1,
     },
     // 5. Supplier (Bottom) -> Emerald
@@ -83,6 +89,7 @@ const initialNodesTemplate = [
         position: { x: 0, y: 160 + 240 + 450 + 240 },
         data: { label: '供应商 (Supplier)', color: 'emerald' },
         style: { width: LAYER_WIDTH, height: 160 },
+        draggable: false,
         zIndex: -1,
     },
 ];
@@ -122,14 +129,68 @@ const Sidebar = () => {
 // Inner Component to use ReactFlow hooks
 const EditorContent = ({ projectId }: { projectId: string }) => {
     const reactFlowWrapper = useRef<HTMLDivElement>(null);
-    const [nodes, setNodes, onNodesChange] = useNodesState([]); // Start empty to wait for load
-    const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+    const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+    const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
     const { screenToFlowPosition } = useReactFlow();
 
     // Auto-load state
     const [isSaving, setIsSaving] = useState(false);
     const [lastSaved, setLastSaved] = useState<Date | null>(null);
     const [hasLoaded, setHasLoaded] = useState(false);
+    const [isEditMode, setIsEditMode] = useState(false); // Default to View Mode
+    const [navMode, setNavMode] = useState<'mouse' | 'trackpad'>('mouse');
+
+    // Smart Resize Logic for Swimlanes
+    const onGroupResize = useCallback((id: string, params: { width: number, height: number, x: number, y: number }) => {
+        setNodes((prevNodes) => {
+            const resizingNode = prevNodes.find(n => n.id === id);
+            if (!resizingNode || !resizingNode.style) return prevNodes;
+
+            const oldHeight = parseFloat(resizingNode.style.height as any);
+            // If oldHeight is missing or NaN, fallback?
+            if (isNaN(oldHeight)) return prevNodes;
+
+            const heightDiff = params.height - oldHeight;
+
+            // Optimization: If no change, return
+            if (heightDiff === 0 && params.width === parseFloat(resizingNode.style.width as any)) return prevNodes;
+
+            return prevNodes.map(node => {
+                // Determine if this is a group node (swimlane)
+                if (node.type !== 'group') {
+                    // If this is a process node, and it's below the resizing group, shift it down
+                    // We use a small buffer (+10) to ensure we only shift nodes clearly below
+                    if (node.position.y > resizingNode.position.y + 10) {
+                        return {
+                            ...node,
+                            position: { ...node.position, y: node.position.y + heightDiff }
+                        };
+                    }
+                    return node;
+                }
+
+                // Logic for Group Nodes (swimlanes)
+                const newStyle = { ...node.style, width: params.width }; // Sync Width for ALL groups
+
+                // If this is the resizing node, update its height
+                if (node.id === id) {
+                    newStyle.height = params.height;
+                }
+
+                // If this group node is physically below the resizing node, shift it down
+                let newY = node.position.y;
+                if (node.position.y > resizingNode.position.y + 10) {
+                    newY += heightDiff;
+                }
+
+                return {
+                    ...node,
+                    style: newStyle,
+                    position: { ...node.position, y: newY }
+                };
+            });
+        });
+    }, [setNodes]);
 
     // Initial Data Load
     useEffect(() => {
@@ -137,39 +198,77 @@ const EditorContent = ({ projectId }: { projectId: string }) => {
 
         const load = async () => {
             const res = await getDiagram(projectId);
-            if (res.success && res.data) {
+            if (res?.success && res.data) {
                 // Restore existing diagram but inject projectId into data for interactions
                 const loadedNodes = (res.data.nodes || initialNodesTemplate).map((n: any) => ({
                     ...n,
-                    data: { ...n.data, projectId }
-                }));
-                // Ensure initial template nodes also get projectId if they were saved without it
+                    draggable: n.type === 'group' ? false : undefined, // Force lock groups
+                    data: {
+                        ...n.data,
+                        projectId,
+                        isEditMode, // Initial state
+                        onResize: onGroupResize, // Inject Handler
+                        hasDrillDown: res.populatedProcessIds?.includes(n.id) || false
+                    },
+                })) as Node[];
+
                 setNodes(loadedNodes);
                 setEdges(res.data.edges || []);
+                setHasLoaded(true);
             } else {
-                // New diagram -> use template
-                const templateNodes = initialNodesTemplate.map(n => ({
+                // Initialize directly from template for both new projects or fallback
+                const initialNodes = initialNodesTemplate.map(n => ({
                     ...n,
-                    data: { ...n.data, projectId }
-                }));
-                setNodes(templateNodes);
+                    data: { ...n.data, projectId, isEditMode, onResize: onGroupResize, hasDrillDown: false }
+                })) as Node[];
+
+                setNodes(initialNodes);
                 setEdges([]);
+                setHasLoaded(true);
             }
             setHasLoaded(true);
         };
         load();
-    }, [projectId, setNodes, setEdges]);
+    }, [projectId, setNodes, setEdges, onGroupResize]);
+
+    // UNDO / REDO HOOK
+    const { undo, redo, canUndo, canRedo, takeSnapshot } = useUndoRedo({
+        nodes, edges, setNodes, setEdges
+    });
+
+    const onNodeDragStart = useCallback(() => takeSnapshot(), [takeSnapshot]);
+
+    // Wrap onNodesChange/onEdgesChange to snapshot on removal
+    const onNodesChangeWithUndo = useCallback((changes: any) => {
+        if (!isEditMode) return;
+        if (changes.some((c: any) => c.type === 'remove')) {
+            takeSnapshot();
+        }
+        onNodesChange(changes);
+    }, [onNodesChange, takeSnapshot, isEditMode]);
+
+    const onEdgesChangeWithUndo = useCallback((changes: any) => {
+        if (!isEditMode) return;
+        if (changes.some((c: any) => c.type === 'remove')) {
+            takeSnapshot();
+        }
+        onEdgesChange(changes);
+    }, [onEdgesChange, takeSnapshot, isEditMode]);
 
     const onConnect = useCallback(
-        (params: Connection) => setEdges((eds) => addEdge(params, eds)),
-        [setEdges],
+        (params: Connection) => {
+            takeSnapshot();
+            setEdges((eds) => addEdge(params, eds));
+        },
+        [setEdges, takeSnapshot],
     );
 
     const onReconnect = useCallback(
         (oldEdge: Edge, newConnection: Connection) => {
+            takeSnapshot();
             setEdges((els) => reconnectEdge(oldEdge, newConnection, els));
         },
-        [setEdges],
+        [setEdges, takeSnapshot],
     );
 
     const onSave = useCallback(async () => {
@@ -177,7 +276,13 @@ const EditorContent = ({ projectId }: { projectId: string }) => {
 
         setIsSaving(true);
         try {
-            const result = await saveDiagram(projectId, nodes, edges);
+            // Sanitize nodes to remove non-serializable functions (onResize)
+            const cleanNodes = nodes.map(node => {
+                const { onResize, ...data } = node.data; // Strip onResize
+                return { ...node, data };
+            });
+
+            const result = await saveDiagram(projectId, cleanNodes, edges);
             if (result.success) {
                 setLastSaved(new Date());
             } else {
@@ -215,14 +320,24 @@ const EditorContent = ({ projectId }: { projectId: string }) => {
                 id: `process-${Date.now()}`,
                 type,
                 position,
-                data: { label: '新的业务流程', projectId },
+                data: { label: '新的业务流程', projectId, isEditMode },
                 zIndex: 10,
             };
 
             setNodes((nds) => nds.concat(newNode));
         },
-        [screenToFlowPosition, setNodes, projectId],
+        [screenToFlowPosition, setNodes, projectId, isEditMode],
     );
+
+    // Update nodes data when Edit Mode toggles
+    useEffect(() => {
+        setNodes((nds) =>
+            nds.map((node) => ({
+                ...node,
+                data: { ...node.data, isEditMode },
+            }))
+        );
+    }, [isEditMode, setNodes]);
 
     if (!hasLoaded) {
         return <div className="w-full h-full bg-slate-50 dark:bg-zinc-950 flex items-center justify-center text-slate-400">Loading diagram...</div>;
@@ -230,24 +345,38 @@ const EditorContent = ({ projectId }: { projectId: string }) => {
 
     return (
         <div className="w-full h-full bg-slate-50 dark:bg-zinc-950 relative" ref={reactFlowWrapper}>
-            <Sidebar />
+            {/* Sidebar only in Edit Mode */}
+            {isEditMode && <Sidebar />}
             <ReactFlow
                 nodes={nodes}
                 edges={edges}
-                onNodesChange={onNodesChange}
-                onEdgesChange={onEdgesChange}
+                onNodesChange={onNodesChangeWithUndo}
+                onEdgesChange={onEdgesChangeWithUndo}
+                onNodeDragStart={onNodeDragStart}
                 onConnect={onConnect}
                 onReconnect={onReconnect}
                 onDrop={onDrop}
                 onDragOver={onDragOver}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
+                nodesDraggable={isEditMode}
+                nodesConnectable={isEditMode}
+                deleteKeyCode={isEditMode ? ['Backspace', 'Delete'] : null}
+                elementsSelectable={true}
+                panOnDrag={navMode === 'mouse'}
+                panOnScroll={navMode === 'trackpad'}
+                selectionOnDrag={navMode === 'trackpad'}
+                zoomOnScroll={navMode === 'mouse'}
+                zoomOnPinch={true}
+                zoomActivationKeyCode="Ctrl"
+                elevateNodesOnSelect={false}
                 // Connection settings
                 connectionLineType={ConnectionLineType.SmoothStep}
                 defaultEdgeOptions={{
                     type: 'custom',
                     animated: true,
                     style: { strokeWidth: 2, stroke: '#6366f1' },
+                    interactionWidth: 25, // Easier to select
                     markerEnd: {
                         type: MarkerType.ArrowClosed,
                         color: '#6366f1',
@@ -262,23 +391,91 @@ const EditorContent = ({ projectId }: { projectId: string }) => {
             >
                 <Panel position="top-right" className="flex gap-2">
                     <div className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur p-2 rounded-lg border border-slate-200 dark:border-zinc-800 shadow-sm flex items-center gap-3">
-                        {lastSaved && (
-                            <span className="text-xs text-slate-400">
-                                已保存 {lastSaved.toLocaleTimeString()}
-                            </span>
+
+                        {/* Undo / Redo */}
+                        {isEditMode && (
+                            <>
+                                <div className="flex items-center gap-1 bg-slate-100 dark:bg-zinc-800 rounded p-1">
+                                    <button
+                                        onClick={undo}
+                                        disabled={!canUndo}
+                                        className={`p-1.5 rounded transition-colors ${canUndo ? 'hover:bg-white text-indigo-600 shadow-sm' : 'text-slate-300 cursor-not-allowed'}`}
+                                        title="撤回 (Ctrl+Z)"
+                                    >
+                                        <Undo2 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                        onClick={redo}
+                                        disabled={!canRedo}
+                                        className={`p-1.5 rounded transition-colors ${canRedo ? 'hover:bg-white text-indigo-600 shadow-sm' : 'text-slate-300 cursor-not-allowed'}`}
+                                        title="重做 (Ctrl+Shift+Z / Ctrl+Y)"
+                                    >
+                                        <Redo2 className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                                <div className="w-px h-6 bg-slate-200 dark:bg-zinc-700 mx-1" />
+                            </>
                         )}
+
+                        {/* Nav Mode Toggle */}
+                        <div className="flex bg-slate-100 dark:bg-zinc-800 rounded p-1 gap-1">
+                            <button
+                                onClick={() => setNavMode('mouse')}
+                                className={`p-1.5 rounded text-xs flex items-center gap-1 transition-all ${navMode === 'mouse' ? 'bg-white shadow text-indigo-600 font-medium' : 'text-slate-400 hover:text-slate-600'}`}
+                                title="鼠标模式：左键平移，滚轮缩放"
+                            >
+                                <MousePointer2 className="w-3.5 h-3.5" />
+                                <span>鼠标</span>
+                            </button>
+                            <button
+                                onClick={() => setNavMode('trackpad')}
+                                className={`p-1.5 rounded text-xs flex items-center gap-1 transition-all ${navMode === 'trackpad' ? 'bg-white shadow text-indigo-600 font-medium' : 'text-slate-400 hover:text-slate-600'}`}
+                                title="触控板模式：双指平移，左键框选"
+                            >
+                                <Move className="w-3.5 h-3.5" />
+                                <span>触控板</span>
+                            </button>
+                        </div>
+
+                        <div className="w-px h-6 bg-slate-200 dark:bg-zinc-700 mx-1" />
+
+                        {/* Mode Toggle */}
                         <button
-                            onClick={onSave}
-                            disabled={isSaving}
+                            onClick={() => setIsEditMode(!isEditMode)}
                             className={`
-                                px-3 py-1.5 text-xs font-semibold text-white rounded transition-all
-                                ${isSaving
-                                    ? 'bg-slate-400 cursor-not-allowed'
-                                    : 'bg-indigo-600 hover:bg-indigo-700 shadow-sm hover:shadow active:scale-95'}
+                                flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded transition-all
+                                ${isEditMode
+                                    ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
+                                    : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'}
                             `}
                         >
-                            {isSaving ? '保存中...' : '保存画布'}
+                            {isEditMode ? <Pencil className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                            {isEditMode ? '编辑模式' : '查阅模式'}
                         </button>
+
+                        <div className="w-px h-4 bg-slate-200 dark:bg-zinc-700 mx-1"></div>
+
+                        {lastSaved && (
+                            <span className="text-xs text-slate-400">
+                                {lastSaved.toLocaleTimeString()}
+                            </span>
+                        )}
+
+                        {/* Save Button - Only in Edit Mode */}
+                        {isEditMode && (
+                            <button
+                                onClick={onSave}
+                                disabled={isSaving}
+                                className={`
+                                    px-3 py-1.5 text-xs font-semibold text-white rounded transition-all
+                                    ${isSaving
+                                        ? 'bg-slate-400 cursor-not-allowed'
+                                        : 'bg-indigo-600 hover:bg-indigo-700 shadow-sm hover:shadow active:scale-95'}
+                                `}
+                            >
+                                {isSaving ? '保存中...' : '保存画布'}
+                            </button>
+                        )}
                     </div>
                 </Panel>
 

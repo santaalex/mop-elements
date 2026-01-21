@@ -2,7 +2,7 @@ import { Handle, Position } from '@xyflow/react';
 
 export const OctopusHandles = () => {
     // Base styles without the '!' prefix hack
-    const baseStyle = "w-3 h-3 bg-slate-300 hover:bg-indigo-500 border-2 border-white transition-colors z-50 shadow-sm rounded-full";
+    const baseStyle = "w-3 h-3 bg-slate-300 hover:bg-indigo-500 border-2 border-white transition-colors z-[100] shadow-sm rounded-full";
 
     // Explicit positioning overrides relative to the node border (0px)
     // We want them floating OUTSIDE.

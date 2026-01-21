@@ -1,18 +1,31 @@
-import { redirect } from 'next/navigation';
-import { getSession } from '@/lib/session';
+import { logout } from '@/actions/auth';
+import { verifySession } from '@/lib/session';
 import Link from 'next/link';
-import { User, LogOut, LayoutDashboard, Plus } from 'lucide-react';
+import { User, LogOut, LayoutDashboard, Settings, ShieldCheck } from 'lucide-react';
+import { redirect } from 'next/navigation';
+import prisma from '@/lib/db';
 
 export default async function DashboardLayout({
     children,
 }: {
     children: React.ReactNode;
 }) {
-    const session = await getSession();
+    // Corrected: use verifySession which returns { isAuth, userId } or redirects
+    const session = await verifySession();
+    const user = await prisma.user.findUnique({ where: { id: session.userId } });
 
-    if (!session) {
+    // verifySession already redirects if not auth, but double check doesn't hurt or just rely on it
+    if (!session.isAuth) {
         redirect('/login');
     }
+
+    // We need user email for the UI. verifySession only returns userId.
+    // Let's fetch the user email from DB or update verifySession to return it.
+    // For now, let's just display "User" or fetch it.
+    // Actually, verifySession in session.ts returns { isAuth, userId }.
+    // I should update verifySession to return more info OR fetch user here.
+    // Fetching user here is safer.
+
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100 selection:bg-indigo-500/30">
@@ -31,19 +44,36 @@ export default async function DashboardLayout({
                     </div>
 
                     <div className="flex items-center gap-4">
+                        {user?.role === 'ADMIN' && (
+                            <Link
+                                href="/admin/users"
+                                className="relative z-50 group flex items-center justify-center w-10 h-10 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-purple-600 hover:border-purple-200 transition-all shadow-sm hover:shadow-md cursor-pointer"
+                                title="管理后台"
+                            >
+                                <ShieldCheck className="w-5 h-5" />
+                            </Link>
+                        )}
+                        <Link
+                            href="/settings"
+                            className="relative z-50 group flex items-center justify-center w-10 h-10 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-indigo-600 hover:border-indigo-200 transition-all shadow-sm hover:shadow-md cursor-pointer"
+                            title="账户设置"
+                        >
+                            <Settings className="w-5 h-5 group-hover:rotate-45 transition-transform duration-300" />
+                        </Link>
+
                         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
                             <div className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center">
                                 <User className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                             </div>
                             <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                                {session.user.email}
+                                {user?.email || 'User'}
                             </span>
                         </div>
 
-                        <form action="/api/auth/logout" method="POST">
+                        <form action={logout}>
                             <button
                                 type="submit"
-                                className="p-2 text-slate-500 hover:text-red-600 transition-colors rounded-md hover:bg-slate-100 dark:hover:bg-slate-900"
+                                className="relative z-50 p-2 text-slate-500 hover:text-red-600 transition-colors rounded-md hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer"
                                 title="退出登录"
                             >
                                 <LogOut className="w-5 h-5" />

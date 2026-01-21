@@ -43,3 +43,24 @@ export async function createProject(prevState: any, formData: FormData) {
     revalidatePath('/dashboard')
     redirect(`/project/${projectId}`)
 }
+
+export async function deleteProject(projectId: string) {
+    const session = await getSession()
+    if (!session || !session.user) {
+        return { error: '未授权访问' }
+    }
+
+    try {
+        await prisma.project.delete({
+            where: {
+                id: projectId,
+                userId: session.user.id // Ensure ownership
+            }
+        })
+        revalidatePath('/dashboard')
+        return { success: true }
+    } catch (error: any) {
+        console.error('Failed to delete project:', error)
+        return { error: '删除失败' }
+    }
+}

@@ -1,27 +1,26 @@
-import { memo, useState } from 'react';
+import { memo } from 'react';
 import { Handle, Position, NodeProps, NodeResizer } from '@xyflow/react';
 import { OctopusHandles } from './OctopusHandles';
+import { SubActivity, MatrixRoleData } from '../../../types/diagram';
 
 const ActivityNode = ({ data, selected }: NodeProps) => {
 
     // --- Status Logic ---
     const getNodeStatus = () => {
-        const kpis = (data.kpis as any[]) || [];
-        if (kpis.length === 0) return 'neutral';
-
         let hasRed = false;
         let hasYellow = false;
         let hasGreen = false;
 
+        // 1. Check Process KPIs (Legacy/High Level)
+        const kpis = (data.kpis as any[]) || [];
         for (const kpi of kpis) {
             const { actual, target, direction = 'higher', warning, critical } = kpi;
-            if (!actual || !target) continue; // Skip incomplete
+            if (!actual || !target) continue;
 
             const a = parseFloat(actual);
             const t = parseFloat(target);
             if (isNaN(a) || isNaN(t)) continue;
 
-            // Resolve thresholds
             let w = parseFloat(warning);
             let c = parseFloat(critical);
             let status = 'neutral';
@@ -39,15 +38,49 @@ const ActivityNode = ({ data, selected }: NodeProps) => {
                 else if (a > w) status = 'yellow';
                 else status = 'green';
             }
-
             if (status === 'red') hasRed = true;
             if (status === 'yellow') hasYellow = true;
             if (status === 'green') hasGreen = true;
         }
 
+        // 2. Check Matrix Roles (SubActivities)
+        const subActivities = (data.subActivities as SubActivity[]) || [];
+        for (const sub of subActivities) {
+            if (!sub.roles) continue;
+            for (const role of sub.roles) {
+                const { actual, target, direction = 'higher', warning, critical } = role;
+                if (!actual || !target) continue;
+
+                const a = parseFloat(actual);
+                const t = parseFloat(target);
+                if (isNaN(a) || isNaN(t)) continue;
+
+                let w = warning ? parseFloat(warning) : NaN;
+                let c = critical ? parseFloat(critical) : NaN;
+                let status = 'neutral';
+
+                if (direction === 'higher') {
+                    if (isNaN(w)) w = t * 0.9;
+                    if (isNaN(c)) c = t * 0.8;
+                    if (a <= c) status = 'red';
+                    else if (a < w) status = 'yellow';
+                    else status = 'green';
+                } else { // lower is better
+                    if (isNaN(w)) w = t * 1.1;
+                    if (isNaN(c)) c = t * 1.2;
+                    if (a >= c) status = 'red';
+                    else if (a > w) status = 'yellow';
+                    else status = 'green';
+                }
+
+                if (status === 'red') hasRed = true;
+                if (status === 'yellow') hasYellow = true;
+                if (status === 'green') hasGreen = true;
+            }
+        }
+
         if (hasRed) return 'red';
         if (hasYellow) return 'yellow';
-        // Only return green if we actually found a green kpi and no red/yellow
         if (hasGreen) return 'green';
 
         return 'neutral';

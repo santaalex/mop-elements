@@ -27,11 +27,19 @@ export async function getDiagram(projectId: string) {
             select: { data: true },
         });
 
+        // Also fetch which nodes have L2 diagrams
+        const l2Diagrams = await db.poolSwimlaneDiagram.findMany({
+            where: { projectId },
+            select: { parentProcessId: true },
+        });
+
+        const populatedProcessIds = l2Diagrams.map(d => d.parentProcessId);
+
         if (!project?.data) {
-            return { success: true, data: null };
+            return { success: true, data: null, populatedProcessIds };
         }
 
-        return { success: true, data: JSON.parse(project.data) };
+        return { success: true, data: JSON.parse(project.data), populatedProcessIds };
     } catch (error) {
         console.error('Failed to load diagram:', error);
         return { success: false, error: 'Failed to load diagram' };

@@ -41,18 +41,28 @@ const colorSchemes: Record<string, { sidebar: string, content: string, border: s
     },
 };
 
-const GroupNode = ({ data, selected, width, height }: NodeProps) => {
+const GroupNode = ({ id, data, selected, width, height }: NodeProps) => {
     const theme = colorSchemes[data.color as string] || colorSchemes.slate;
+
+    // Call shared resize handler if available
+    const onResize = (evt: any, params: { width: number; height: number; x: number; y: number }) => {
+        if (data.onResize && typeof data.onResize === 'function') {
+            (data.onResize as Function)(id, params);
+        }
+    };
 
     return (
         <>
-            <NodeResizer
-                minWidth={200}
-                minHeight={100}
-                isVisible={selected}
-                lineClassName="border-indigo-500 opacity-50"
-                handleClassName={`h-3 w-3 rounded-full border-2 border-white shadow-md ${theme.handle}`}
-            />
+            {data.isEditMode && (
+                <NodeResizer
+                    minWidth={200}
+                    minHeight={100}
+                    isVisible={selected}
+                    onResize={onResize}
+                    lineClassName="border-indigo-500 opacity-50"
+                    handleClassName={`h-3 w-3 rounded-full border-2 border-white shadow-md ${theme.handle}`}
+                />
+            )}
 
             <div className={`
         relative h-full w-full flex rounded-lg overflow-hidden
@@ -75,7 +85,7 @@ const GroupNode = ({ data, selected, width, height }: NodeProps) => {
                         style={{ writingMode: 'vertical-lr' }}
                     >
                         <GripVertical className={`w-4 h-4 mb-2 opacity-50 group-hover:opacity-100 transition-opacity ${theme.dragIcon}`} />
-                        <span>{data.label}</span>
+                        <span>{data.label as string}</span>
                     </div>
                 </div>
 

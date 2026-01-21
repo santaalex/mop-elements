@@ -1,0 +1,20 @@
+{
+  "data": {
+    "appId": "02238ebc-5806-4f52-9491-d9be007a6005",
+    "name": "MoP数据",
+    "appKey": "2a33997f99650134",
+    "sign": "ODMzZGQ5OWIwYTYwNDUyOTZiNDJhYmI4Y2I4M2RiN2IyMWIzNzkwMTkyNzI3NjRkMmVlMDQzZjBhYWFlMjYzNw==",
+    "type": 1,
+    "remark": "",
+    "viewNull": false,
+    "sections": [
+      {
+        "id": "695bd1dae57c5c2143d49d96",
+        "name": "",
+        "entities": []
+      }
+    ]
+  },
+  "success": true,
+  "error_code": 1
+}

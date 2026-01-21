@@ -50,8 +50,8 @@ export async function register(prevState: any, formData: FormData) {
         },
     })
 
-    // 4. Create Session
-    await createSession(newUser.id, newUser.name || 'User')
+    // 4. Create Session (Defaults to USER)
+    await createSession(newUser.id, newUser.name || 'User', 'USER') // Changed
 
     redirect('/dashboard')
 }
@@ -66,7 +66,8 @@ export async function login(prevState: any, formData: FormData) {
         return { error: 'Invalid credentials.' }
     }
 
-    await createSession(user.id, user.name || 'User')
+    // Pass user.role from DB
+    await createSession(user.id, user.name || 'User', user.role) // Changed
     redirect('/dashboard')
 }
 

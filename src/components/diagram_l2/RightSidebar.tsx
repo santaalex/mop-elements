@@ -1,42 +1,25 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Node } from '@xyflow/react';
-import { X, Settings2, FileText, BarChart3, ChevronRight, Plus, ChevronDown, User, Trash2 } from 'lucide-react';
-
-interface SopRole {
-    id: string;
-    roleName: string;
-    taskDesc: string;
-    pi: string;
-    target: string;
-}
-
-interface SopStep {
-    id: string;
-    name: string;
-    roles: SopRole[];
-}
+import { Settings2, BarChart3, Lock, ExternalLink, Plus, X, List } from 'lucide-react';
+import { SubActivity, MatrixRoleData } from '../../types/diagram';
 
 interface RightSidebarProps {
     selectedNodeId: string | null;
     nodes: Node[];
     setNodes: (setter: (nodes: Node[]) => Node[]) => void;
+    isReadOnly?: boolean;
 }
 
-export default function RightSidebar({ selectedNodeId, nodes, setNodes }: RightSidebarProps) {
-    const [activeTab, setActiveTab] = useState<'kpi' | 'sop'>('kpi');
-    const [expandedSteps, setExpandedSteps] = useState<Record<string, boolean>>({});
-
+export default function RightSidebar({ selectedNodeId, nodes, setNodes, isReadOnly = false }: RightSidebarProps) {
     // Derive the live node object from the state to ensure we always have the latest data
     const selectedNode = nodes.find((n) => n.id === selectedNodeId) || null;
+    const [activeTab, setActiveTab] = useState<'kpi' | 'matrix'>('kpi');
 
-    if (!selectedNode || selectedNode.type === 'lane') return null; // Don't show for lanes or empty
-
-    const toggleStep = (stepId: string) => {
-        setExpandedSteps(prev => ({ ...prev, [stepId]: !prev[stepId] }));
-    };
+    if (!selectedNode) return null; // Don't show for empty
 
     // --- Helper to update node data ---
     const updateNodeData = (newData: any) => {
+        if (isReadOnly) return;
         setNodes((nds) =>
             nds.map((n) => {
                 if (n.id === selectedNode.id) {
@@ -47,8 +30,9 @@ export default function RightSidebar({ selectedNodeId, nodes, setNodes }: RightS
         );
     };
 
-    // --- KPI Helpers ---
+    // --- KPI Helpers (Restored for Process Level KPIs) ---
     const addKpi = () => {
+        if (isReadOnly) return;
         const kpis = (selectedNode.data.kpis as any[]) || [];
         const newKpi = {
             id: Date.now().toString(),
@@ -60,70 +44,58 @@ export default function RightSidebar({ selectedNodeId, nodes, setNodes }: RightS
     };
 
     const updateKpi = (index: number, field: string, value: string) => {
+        if (isReadOnly) return;
         const kpis = [...((selectedNode.data.kpis as any[]) || [])];
         kpis[index] = { ...kpis[index], [field]: value };
         updateNodeData({ kpis });
     };
 
     const deleteKpi = (id: string) => {
+        if (isReadOnly) return;
         const kpis = (selectedNode.data.kpis as any[]) || [];
         updateNodeData({ kpis: kpis.filter((k) => k.id !== id) });
     };
 
-    // --- SOP Helpers ---
-    const addSopStep = () => {
-        const steps = (selectedNode.data.sop_steps as SopStep[]) || [];
-        const newStep: SopStep = {
-            id: Date.now().toString(),
-            name: '新子活动 (Sub-activity)',
-            roles: []
-        };
-        // Auto-expand the new step
-        setExpandedSteps(prev => ({ ...prev, [newStep.id]: true }));
-        updateNodeData({ sop_steps: [...steps, newStep] });
-    };
+    // --- Lane Implementation ---
+    if (selectedNode.type === 'lane') {
+        return (
+            <div className="w-80 border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col h-full shadow-xl z-20">
+                <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
+                    <div className="flex items-center gap-2">
+                        <Settings2 className="w-4 h-4 text-indigo-500" />
+                        <h3 className="font-semibold text-slate-900 dark:text-white">泳道配置</h3>
+                    </div>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                    <div className="space-y-2">
+                        <label htmlFor="swimlane-name-sidebar" className="text-xs font-semibold text-slate-500 uppercase tracking-wider">泳道名称</label>
+                        <input
+                            type="text"
+                            name="swimlane-name-sidebar"
+                            id="swimlane-name-sidebar"
+                            autoComplete="off"
+                            value={selectedNode.data.label as string || ''}
+                            onChange={(e) => updateNodeData({ label: e.target.value })}
+                            disabled={isReadOnly}
+                            className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                            placeholder="输入泳道名称"
+                        />
+                    </div>
+                    <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-lg text-xs leading-relaxed">
+                        提示：泳道通常代表一个部门、角色或职能领域。您也可以在画布左侧双击泳道标题进行修改。
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
-    const deleteSopStep = (stepId: string) => {
-        if (!confirm('确定删除此子活动及其所有岗位条目吗？')) return;
-        const steps = (selectedNode.data.sop_steps as SopStep[]) || [];
-        updateNodeData({ sop_steps: steps.filter(s => s.id !== stepId) });
-    };
-
-    const updateSopStepName = (stepIndex: number, name: string) => {
-        const steps = [...((selectedNode.data.sop_steps as SopStep[]) || [])];
-        steps[stepIndex] = { ...steps[stepIndex], name };
-        updateNodeData({ sop_steps: steps });
-    };
-
-    const addRoleToStep = (stepIndex: number) => {
-        const steps = [...((selectedNode.data.sop_steps as SopStep[]) || [])];
-        const newRole: SopRole = {
-            id: Date.now().toString(),
-            roleName: '岗位名称',
-            taskDesc: '',
-            pi: '',
-            target: ''
-        };
-        steps[stepIndex] = { ...steps[stepIndex], roles: [...steps[stepIndex].roles, newRole] };
-        updateNodeData({ sop_steps: steps });
-    };
-
-    const deleteRoleFromStep = (stepIndex: number, roleId: string) => {
-        const steps = [...((selectedNode.data.sop_steps as SopStep[]) || [])];
-        steps[stepIndex] = {
-            ...steps[stepIndex],
-            roles: steps[stepIndex].roles.filter(r => r.id !== roleId)
-        };
-        updateNodeData({ sop_steps: steps });
-    };
-
-    const updateRoleData = (stepIndex: number, roleIndex: number, field: keyof SopRole, value: string) => {
-        const steps = [...((selectedNode.data.sop_steps as SopStep[]) || [])];
-        const roles = [...steps[stepIndex].roles];
-        roles[roleIndex] = { ...roles[roleIndex], [field]: value };
-        steps[stepIndex] = { ...steps[stepIndex], roles };
-        updateNodeData({ sop_steps: steps });
-    };
+    // --- Activity Node Data ---
+    const subActivities = (selectedNode.data.subActivities as SubActivity[]) || [];
+    const stepCount = subActivities.length;
+    let matrixRolesCount = 0;
+    subActivities.forEach(s => {
+        if (s.roles) matrixRolesCount += s.roles.length;
+    });
 
     return (
         <div className="absolute top-20 right-6 z-50 w-80">
@@ -134,14 +106,15 @@ export default function RightSidebar({ selectedNodeId, nodes, setNodes }: RightS
                 <div className="h-12 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between px-4 bg-white/50 dark:bg-zinc-800/50">
                     <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
                         <Settings2 className="w-4 h-4 text-indigo-500" />
-                        节点属性
+                        {isReadOnly ? '节点信息 (View Only)' : '节点属性'}
                     </div>
                     {/* Node Label (Quick Edit) */}
                     <input
                         type="text"
                         value={(selectedNode.data.label as string) || ''}
+                        disabled={isReadOnly}
                         onChange={(e) => updateNodeData({ label: e.target.value })}
-                        className="text-right bg-transparent border-none text-xs font-medium text-slate-500 hover:text-indigo-600 focus:ring-0 w-32"
+                        className={`text-right bg-transparent border-none text-xs font-medium focus:ring-0 w-32 ${isReadOnly ? 'text-slate-600 cursor-default' : 'text-slate-500 hover:text-indigo-600'}`}
                     />
                 </div>
 
@@ -157,29 +130,31 @@ export default function RightSidebar({ selectedNodeId, nodes, setNodes }: RightS
                         Process KPI
                     </button>
                     <button
-                        onClick={() => setActiveTab('sop')}
+                        onClick={() => setActiveTab('matrix')}
                         className={`flex-1 py-3 text-xs font-medium transition-colors flex items-center justify-center gap-1.5
-                        ${activeTab === 'sop' ? 'text-indigo-600 bg-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}
+                        ${activeTab === 'matrix' ? 'text-indigo-600 bg-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}
                         `}
                     >
-                        <FileText className="w-3 h-3" />
-                        SOP Matrix
+                        <List className="w-3 h-3" />
+                        Activity Matrix
                     </button>
                 </div>
 
                 {/* Content Area */}
                 <div className="p-4 min-h-[300px] max-h-[60vh] overflow-y-auto custom-scrollbar">
 
-                    {/* KPI TAB */}
+                    {/* KPI TAB: RESTORED FULL EDITING */}
                     {activeTab === 'kpi' && (
                         <div className="space-y-4">
                             <div className="flex items-center justify-between">
                                 <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                                     流程节点指标 ({((selectedNode.data.kpis as any[]) || []).length})
                                 </h3>
-                                <button onClick={addKpi} className="p-1 rounded hover:bg-slate-100 dark:hover:bg-zinc-800 text-indigo-600">
-                                    <Plus className="w-4 h-4" />
-                                </button>
+                                {!isReadOnly && (
+                                    <button onClick={addKpi} className="p-1 rounded hover:bg-slate-100 dark:hover:bg-zinc-800 text-indigo-600">
+                                        <Plus className="w-4 h-4" />
+                                    </button>
+                                )}
                             </div>
 
                             <div className="space-y-3">
@@ -239,15 +214,18 @@ export default function RightSidebar({ selectedNodeId, nodes, setNodes }: RightS
 
                                         return (
                                             <div key={kpi.id} className={`group rounded-xl p-3 transition-all duration-300 relative border ${getCardStyle(status)}`}>
-                                                <button onClick={() => deleteKpi(kpi.id)} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-opacity z-10">
-                                                    <X className="w-3.5 h-3.5" />
-                                                </button>
+                                                {!isReadOnly && (
+                                                    <button onClick={() => deleteKpi(kpi.id)} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-opacity z-10">
+                                                        <X className="w-3.5 h-3.5" />
+                                                    </button>
+                                                )}
                                                 <div className="space-y-3">
                                                     <input
                                                         type="text"
                                                         value={kpi.name}
+                                                        disabled={isReadOnly}
                                                         onChange={(e) => updateKpi(index, 'name', e.target.value)}
-                                                        className="w-[90%] bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 border-none p-0 focus:ring-0 placeholder-slate-300"
+                                                        className={`w-[90%] bg-transparent text-sm font-bold border-none p-0 focus:ring-0 placeholder-slate-300 ${isReadOnly ? 'cursor-default text-slate-800 dark:text-slate-100' : 'text-slate-700 dark:text-slate-200'}`}
                                                         placeholder="指标名称..."
                                                     />
                                                     <div className="grid grid-cols-5 gap-2">
@@ -257,8 +235,9 @@ export default function RightSidebar({ selectedNodeId, nodes, setNodes }: RightS
                                                             <input
                                                                 type="text"
                                                                 value={kpi.target}
+                                                                disabled={isReadOnly}
                                                                 onChange={(e) => updateKpi(index, 'target', e.target.value)}
-                                                                className="flex-1 min-w-0 bg-transparent text-xs font-mono text-slate-600 dark:text-slate-300 border-none p-0 focus:ring-0 text-right font-medium"
+                                                                className={`flex-1 min-w-0 bg-transparent text-xs font-mono text-right font-medium border-none p-0 focus:ring-0 ${isReadOnly ? 'cursor-default text-slate-600 dark:text-slate-300' : 'text-slate-600 dark:text-slate-300'}`}
                                                             />
                                                         </div>
                                                         {/* Actual */}
@@ -267,8 +246,9 @@ export default function RightSidebar({ selectedNodeId, nodes, setNodes }: RightS
                                                             <input
                                                                 type="text"
                                                                 value={kpi.actual || ''}
+                                                                disabled={isReadOnly}
                                                                 onChange={(e) => updateKpi(index, 'actual', e.target.value)}
-                                                                className="flex-1 min-w-0 bg-transparent text-xs font-mono border-none p-0 focus:ring-0 text-right font-bold text-inherit"
+                                                                className={`flex-1 min-w-0 bg-transparent text-xs font-mono border-none p-0 focus:ring-0 text-right font-bold text-inherit ${isReadOnly ? 'cursor-default' : ''}`}
                                                                 placeholder="-"
                                                             />
                                                         </div>
@@ -277,8 +257,9 @@ export default function RightSidebar({ selectedNodeId, nodes, setNodes }: RightS
                                                             <input
                                                                 type="text"
                                                                 value={kpi.unit}
+                                                                disabled={isReadOnly}
                                                                 onChange={(e) => updateKpi(index, 'unit', e.target.value)}
-                                                                className="w-full text-center bg-transparent text-xs text-slate-400 border-none p-0 focus:ring-0"
+                                                                className={`w-full text-center bg-transparent text-xs border-none p-0 focus:ring-0 ${isReadOnly ? 'cursor-default text-slate-500' : 'text-slate-400'}`}
                                                                 title="单位"
                                                             />
                                                         </div>
@@ -292,114 +273,33 @@ export default function RightSidebar({ selectedNodeId, nodes, setNodes }: RightS
                         </div>
                     )}
 
-                    {/* SOP TAB */}
-                    {activeTab === 'sop' && (
-                        <div className="space-y-4">
-                            {/* SOP Header */}
-                            <div className="flex items-center justify-between">
-                                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                                    活动细化分解 ({((selectedNode.data.sop_steps as any[]) || []).length})
-                                </h3>
-                                <button onClick={addSopStep} className="p-1 rounded hover:bg-slate-100 dark:hover:bg-zinc-800 text-indigo-600">
-                                    <Plus className="w-4 h-4" />
-                                </button>
+                    {/* MATRIX SUMMARY TAB */}
+                    {activeTab === 'matrix' && (
+                        <div className="space-y-6 pt-4">
+                            {/* Stats */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-slate-50 dark:bg-zinc-900 rounded-xl p-3 text-center border border-slate-100 dark:border-zinc-800">
+                                    <div className="text-2xl font-bold text-slate-700 dark:text-slate-200">{stepCount}</div>
+                                    <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">Steps</div>
+                                </div>
+                                <div className="bg-slate-50 dark:bg-zinc-900 rounded-xl p-3 text-center border border-slate-100 dark:border-zinc-800">
+                                    <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{matrixRolesCount}</div>
+                                    <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">Matrix Roles</div>
+                                </div>
                             </div>
 
-                            {/* Steps List */}
-                            <div className="space-y-2">
-                                {((selectedNode.data.sop_steps as SopStep[]) || []).length === 0 ? (
-                                    <div className="text-center py-6 border-2 border-dashed border-slate-100 dark:border-zinc-800 rounded-lg">
-                                        <div className="text-xs text-slate-400">暂无子活动</div>
-                                        <div className="text-[10px] text-slate-300 mt-1">点击 + 添加分解步骤</div>
-                                    </div>
-                                ) : (
-                                    ((selectedNode.data.sop_steps as SopStep[]) || []).map((step, stepIndex) => (
-                                        <div key={step.id} className="border border-slate-200 dark:border-zinc-800 rounded-lg overflow-hidden bg-white dark:bg-zinc-950">
-
-                                            {/* Step Header */}
-                                            <div className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-zinc-900 group">
-                                                <button onClick={() => toggleStep(step.id)} className="text-slate-400 hover:text-slate-600">
-                                                    {expandedSteps[step.id] ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                                                </button>
-                                                <input
-                                                    type="text"
-                                                    value={step.name}
-                                                    onChange={(e) => updateSopStepName(stepIndex, e.target.value)}
-                                                    className="flex-1 bg-transparent text-xs font-semibold text-slate-700 dark:text-slate-200 border-none p-0 focus:ring-0"
-                                                    placeholder="子活动名称..."
-                                                />
-                                                <button onClick={() => addRoleToStep(stepIndex)} className="text-slate-400 hover:text-green-600 opacity-0 group-hover:opacity-100 transition-opacity" title="添加岗位">
-                                                    <User className="w-3.5 h-3.5" />
-                                                </button>
-                                                <button onClick={() => deleteSopStep(step.id)} className="text-slate-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity" title="删除子活动">
-                                                    <Trash2 className="w-3.5 h-3.5" />
-                                                </button>
-                                            </div>
-
-                                            {/* Roles List for this Step */}
-                                            {expandedSteps[step.id] && (
-                                                <div className="p-2 space-y-3 bg-white dark:bg-zinc-950 border-t border-slate-100 dark:border-zinc-800">
-                                                    {(step.roles || []).length === 0 ? (
-                                                        <div className="text-[10px] text-slate-400 text-center py-2 italic cursor-pointer hover:text-indigo-500" onClick={() => addRoleToStep(stepIndex)}>
-                                                            + 添加对应岗位
-                                                        </div>
-                                                    ) : (
-                                                        step.roles.map((role, roleIndex) => (
-                                                            <div key={role.id} className="pl-2 border-l-2 border-slate-100 dark:border-zinc-800 relative group/role">
-                                                                <button onClick={() => deleteRoleFromStep(stepIndex, role.id)} className="absolute right-0 top-0 text-slate-300 hover:text-red-500 opacity-0 group-hover/role:opacity-100">
-                                                                    <X className="w-3 h-3" />
-                                                                </button>
-
-                                                                {/* Role Name */}
-                                                                <div className="flex items-center gap-1 mb-1.5">
-                                                                    <User className="w-3 h-3 text-indigo-400" />
-                                                                    <input
-                                                                        type="text"
-                                                                        value={role.roleName}
-                                                                        onChange={(e) => updateRoleData(stepIndex, roleIndex, 'roleName', e.target.value)}
-                                                                        className="bg-transparent text-[11px] font-medium text-indigo-600 border-b border-transparent hover:border-slate-200 focus:border-indigo-400 focus:ring-0 p-0 w-full"
-                                                                        placeholder="岗位名称 (如: 采购员)..."
-                                                                    />
-                                                                </div>
-
-                                                                {/* Task Desc */}
-                                                                <textarea
-                                                                    value={role.taskDesc}
-                                                                    onChange={(e) => updateRoleData(stepIndex, roleIndex, 'taskDesc', e.target.value)}
-                                                                    className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-100 dark:border-zinc-800 rounded px-2 py-1.5 text-[10px] text-slate-600 dark:text-slate-300 focus:ring-1 focus:ring-indigo-500/50 resize-none h-16 mb-1.5"
-                                                                    placeholder="任务描述 (SOP)..."
-                                                                />
-
-                                                                <div className="flex gap-2 items-center">
-                                                                    <div className="flex-1 bg-slate-50 dark:bg-zinc-900 border border-slate-100 dark:border-zinc-800 rounded px-2 py-1 flex items-center gap-1">
-                                                                        <span className="text-[9px] text-slate-400 shrink-0">KPI</span>
-                                                                        <input
-                                                                            type="text"
-                                                                            value={role.pi}
-                                                                            onChange={(e) => updateRoleData(stepIndex, roleIndex, 'pi', e.target.value)}
-                                                                            className="w-full bg-transparent text-[10px] text-slate-600 focus:ring-0 border-none p-0"
-                                                                            placeholder="指标内容..."
-                                                                        />
-                                                                    </div>
-                                                                    <div className="w-20 bg-slate-50 dark:bg-zinc-900 border border-slate-100 dark:border-zinc-800 rounded px-2 py-1 flex items-center gap-1">
-                                                                        <span className="text-[9px] text-slate-400 shrink-0">值</span>
-                                                                        <input
-                                                                            type="text"
-                                                                            value={role.target}
-                                                                            onChange={(e) => updateRoleData(stepIndex, roleIndex, 'target', e.target.value)}
-                                                                            className="w-full bg-transparent text-[10px] text-slate-600 focus:ring-0 border-none p-0 text-right"
-                                                                            placeholder="100%"
-                                                                        />
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        ))
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))
-                                )}
+                            {/* Hint */}
+                            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/30 rounded-lg p-3 flex flex-col gap-2">
+                                <div className="flex items-center gap-2 text-xs font-bold text-amber-700 dark:text-amber-500">
+                                    <Lock className="w-3 h-3" />
+                                    Activity Matrix
+                                </div>
+                                <p className="text-[11px] leading-relaxed text-amber-600/90 dark:text-amber-400/90">
+                                    详细的任务步骤及 KPI (Matrix Role Data) 只能在矩阵弹窗中编辑。
+                                </p>
+                                <div className="text-[10px] text-amber-500 mt-1 font-medium">
+                                    • 双击节点打开矩阵视图
+                                </div>
                             </div>
                         </div>
                     )}

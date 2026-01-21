@@ -80,9 +80,16 @@ export default function CustomEdge({
     //    But we want encapsulated logic.
     //    Actually, we can put a pointer-events-all div at the label position as a "Label Placeholder".
 
+    const edgeStyle = {
+        ...style,
+        stroke: selected ? '#f59e0b' : (style.stroke || '#b1b1b7'), // Amber for selection
+        strokeWidth: selected ? 3 : (style.strokeWidth || 2),
+        filter: selected ? 'drop-shadow(0 0 3px rgba(245, 158, 11, 0.4))' : undefined,
+    };
+
     return (
         <>
-            <BaseEdge path={edgePath} markerEnd={markerEnd} style={style} />
+            <BaseEdge path={edgePath} markerEnd={markerEnd} style={edgeStyle} />
             <EdgeLabelRenderer>
                 <div
                     style={{

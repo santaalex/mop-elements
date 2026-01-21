@@ -1,14 +1,27 @@
 import { memo, useState, useRef, useEffect } from 'react';
-import { NodeProps, NodeResizer } from '@xyflow/react';
-import { X } from 'lucide-react';
+import { NodeProps, NodeResizer, useReactFlow } from '@xyflow/react';
+import { X, Pencil } from 'lucide-react';
 
 const LaneNode = ({ id, data, selected }: NodeProps) => {
+    const { setNodes } = useReactFlow();
     const [label, setLabel] = useState((data.label as string) || '新泳道');
     const [isEditing, setIsEditing] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
 
     // Call external delete handler if provided in data
     const onDelete = data.onDelete as () => void;
+
+    // Call shared resize handler if available
+    const onResize = (evt: any, params: { width: number; height: number; x: number; y: number }) => {
+        if (data.onResize && typeof data.onResize === 'function') {
+            (data.onResize as Function)(id, params);
+        }
+    };
+
+    // Sync local state if data.label changes (e.g. via Sidebar)
+    useEffect(() => {
+        setLabel((data.label as string) || '新泳道');
+    }, [data.label]);
 
     useEffect(() => {
         if (isEditing && inputRef.current) {
@@ -18,18 +31,24 @@ const LaneNode = ({ id, data, selected }: NodeProps) => {
 
     const handleSubmit = () => {
         setIsEditing(false);
-        data.label = label;
+        // Update via React Flow state to trigger change events and history
+        setNodes((nodes) => nodes.map(n =>
+            n.id === id ? { ...n, data: { ...n.data, label } } : n
+        ));
     };
 
     return (
         <div className="h-full w-full relative group">
-            <NodeResizer
-                minWidth={600}
-                minHeight={150}
-                isVisible={selected}
-                lineClassName="border-indigo-300 opacity-50"
-                handleClassName="h-2.5 w-2.5 bg-indigo-400 border-none rounded"
-            />
+            {!!data.isEditMode && (
+                <NodeResizer
+                    minWidth={600}
+                    minHeight={150}
+                    isVisible={selected}
+                    onResize={onResize}
+                    lineClassName="border-indigo-300 opacity-50"
+                    handleClassName="h-2.5 w-2.5 bg-indigo-400 border-none rounded"
+                />
+            )}
 
             {/* Lane Container */}
             <div className={`
@@ -46,32 +65,53 @@ const LaneNode = ({ id, data, selected }: NodeProps) => {
                     bg-slate-100 dark:bg-zinc-800/50
                     flex items-center justify-center
                     relative
+                    group/header
                 ">
                     {/* Rotated Text */}
-                    <div className="transform -rotate-90 whitespace-nowrap">
+                    <div className="transform -rotate-90 whitespace-nowrap flex items-center gap-2">
                         {isEditing ? (
                             <input
                                 ref={inputRef}
+                                type="text"
+                                id="lane-label-input"
+                                name="lane-label"
+                                autoComplete="off"
                                 value={label}
                                 onChange={(e) => setLabel(e.target.value)}
                                 onBlur={handleSubmit}
                                 onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-                                className="w-32 text-center bg-white border border-indigo-300 text-xs px-1 py-0.5 outline-none"
+                                className="w-32 text-center bg-white border border-indigo-300 text-xs px-1 py-0.5 outline-none text-slate-900"
                             />
                         ) : (
-                            <span
-                                className="text-sm font-bold text-slate-600 dark:text-slate-400 cursor-pointer select-none hover:text-indigo-600"
-                                onDoubleClick={() => setIsEditing(true)}
+                            <div
+                                className="flex items-center gap-2 cursor-pointer hover:bg-slate-200/50 dark:hover:bg-zinc-700/50 px-2 py-1 rounded transition-colors"
+                                onDoubleClick={(e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    if (data.isEditMode) setIsEditing(true);
+                                }}
                             >
-                                {label}
-                            </span>
+                                <span className="text-sm font-bold text-slate-600 dark:text-slate-400 select-none">
+                                    {label}
+                                </span>
+                                {/* Pencil Icon - Visible on Header Hover */}
+                                {!!data.isEditMode && (
+                                    <Pencil
+                                        className="w-3 h-3 text-slate-400 opacity-0 group-hover/header:opacity-100 transition-opacity"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setIsEditing(true);
+                                        }}
+                                    />
+                                )}
+                            </div>
                         )}
                     </div>
 
                     {/* Delete Button (Visible on Hover of Header) */}
-                    {onDelete && selected && (
+                    {!!data.isEditMode && onDelete && selected && (
                         <button
-                            className="absolute top-1 left-1/2 -translate-x-1/2 p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded"
+                            className="absolute top-1 left-1/2 -translate-x-1/2 p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded z-10"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 if (confirm('确定删除此泳道及其内容吗？')) onDelete();

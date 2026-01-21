@@ -1,0 +1,160 @@
+openapi: 3.0.0
+info:
+  title: HAP 应用开放接口文档 (v3-beta)
+  description:
+    $ref: './description.md'
+servers:
+  - url: 'https://api.mingdao.com'
+
+# 导航标签
+tags:
+  - name: app
+    x-displayName: 应用
+  - name: worksheet
+    x-displayName: 工作表
+  - name: record
+    x-displayName: 工作表行记录
+  - name: workflow
+    x-displayName: 工作流
+  - name: optionsets
+    x-displayName: 选项集
+  - name: role
+    x-displayName: 角色
+  - name: public
+    x-displayName: 公共查询
+
+# 接口
+paths:
+  # 应用
+  /v3/app:
+    $ref: './paths/app/getInfo.yaml'
+
+  # 工作表
+  /v3/app/worksheets/list:
+    $ref: './paths/worksheet/list.yaml'
+  /v3/app/worksheets:
+    $ref: './paths/worksheet/createWorksheet.yaml'
+  /v3/app/worksheets/{worksheet_id}:
+    get:
+      $ref: './paths/worksheet/getStructure.yaml#/get'
+    post:
+      $ref: './paths/worksheet/updateWorksheet.yaml#/post'
+    delete:
+      $ref: './paths/worksheet/deleteWorksheet.yaml#/delete'
+  /v3/app/worksheets/{worksheet_id}/rows:
+    $ref: './paths/worksheet/create.yaml'
+  /v3/app/worksheets/{worksheet_id}/rows/list:
+    $ref: './paths/worksheet/getList.yaml'
+  /v3/app/worksheets/{worksheet_id}/rows/batch:
+    post:
+      $ref: './paths/worksheet/batchCreate.yaml#/post'
+    patch:
+      $ref: './paths/worksheet/batchUpdate.yaml#/patch'
+    delete:
+      $ref: './paths/worksheet/batchDelete.yaml#/delete'
+  /v3/app/worksheets/{worksheet_id}/rows/{row_id}:
+    get:
+      $ref: './paths/worksheet/get.yaml#/get'
+    patch:
+      $ref: './paths/worksheet/update.yaml#/patch'
+    delete:
+      $ref: './paths/worksheet/delete.yaml#/delete'
+  /v3/app/worksheets/{worksheet_id}/rows/{row_id}/discussions:
+    $ref: './paths/worksheet/getDiscussions.yaml'
+  /v3/app/worksheets/{worksheet_id}/rows/{row_id}/logs:
+    $ref: './paths/worksheet/getLogs.yaml'
+  /v3/app/worksheets/{worksheet_id}/rows/pivot:
+    $ref: './paths/worksheet/getPivot.yaml'
+  /v3/app/worksheets/{worksheet_id}/rows/{row_id}/relations/{field}:
+    $ref: './paths/worksheet/getRelations.yaml'
+  /v3/app/worksheets/{worksheet_id}/rows/{row_id}/share-link:
+    $ref: './paths/worksheet/getShareLink.yaml'
+
+  # 角色
+  /v3/app/roles:
+    get:
+      $ref: './paths/role/list.yaml#/get'
+    post:
+      $ref: './paths/role/create.yaml#/post'
+  /v3/app/roles/{role_id}:
+    get:
+      $ref: './paths/role/get.yaml#/get'
+    delete:
+      $ref: './paths/role/delete.yaml#/delete'
+  /v3/app/roles/{role_id}/members:
+    post:
+      $ref: './paths/role/addMember.yaml#/post'
+    delete:
+      $ref: './paths/role/removeMember.yaml#/delete'
+  /v3/app/roles/users/{user_id}:
+    $ref: './paths/role/leaveAll.yaml'
+
+  # 选项集
+  /v3/app/optionsets:
+    get:
+      $ref: './paths/options/list.yaml#/get'
+    post:
+      $ref: './paths/options/create.yaml#/post'
+  /v3/app/optionsets/{optionset_id}:
+    post:
+      $ref: './paths/options/update.yaml#/post'
+    delete:
+      $ref: './paths/options/delete.yaml#/delete'
+
+  # 工作流
+  /v3/app/workflow/processes:
+    $ref: './paths/workflow/list.yaml'
+  /v3/app/workflow/processes/{process_id}:
+    $ref: './paths/workflow/get.yaml'
+  /v3/app/workflow/hooks/{process_id}:
+    $ref: './paths/workflow/trigger.yaml'
+
+  # 公共查询
+  /v3/users/lookup:
+    $ref: './paths/public/findMember.yaml'
+  /v3/departments/lookup:
+    $ref: './paths/public/findDepartment.yaml'
+  /v3/regions:
+    $ref: './paths/public/getRegions.yaml'
+
+# 公共组件
+components:
+  schemas:
+    baseResponse:
+      $ref: './schemas/base/response/baseResponse.yaml'
+    memberInfo:
+      $ref: './schemas/public/memberInfo.yaml'
+    department_with_path:
+      $ref: './schemas/public/department_with_path.yaml'
+    departmentInfo:
+      $ref: './schemas/public/departmentInfo.yaml'
+    regionInfo:
+      $ref: './schemas/public/regionInfo.yaml'
+    process:
+      $ref: './schemas/workflow/process.yaml'
+    process_detail:
+      $ref: './schemas/workflow/process_detail.yaml'
+    input:
+      $ref: './schemas/workflow/input.yaml'
+    output:
+      $ref: './schemas/workflow/output.yaml'
+    role:
+      $ref: './schemas/role/role.yaml'
+    role_permission:
+      $ref: './schemas/role/role_permission.yaml'
+    custom_page:
+      $ref: './schemas/app/custom_page.yaml'
+    optionset:
+      $ref: './schemas/options/optionset.yaml'
+    field:
+      $ref: './schemas/worksheet/field.yaml'
+    worksheet:
+      $ref: './schemas/worksheet/worksheet.yaml'
+    filter:
+      $ref: './schemas/worksheet/filter.yaml'
+    filter_children:
+      $ref: './schemas/worksheet/filter_children.yaml'
+    record_row:
+      $ref: './schemas/worksheet/record_row.yaml'
+    discussion:
+      $ref: './schemas/worksheet/discussion.yaml'
