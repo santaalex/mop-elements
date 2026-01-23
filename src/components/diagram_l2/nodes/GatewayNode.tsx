@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Handle, Position, NodeProps } from '@xyflow/react';
+import { Handle, Position, NodeProps } from 'reactflow';
 import { X, Plus, Circle } from 'lucide-react';
 import { OctopusHandles } from './OctopusHandles';
 

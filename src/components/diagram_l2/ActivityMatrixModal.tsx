@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { SubActivity, MatrixRoleData, RoleConfig } from '@/types/diagram';
 import { X, Save, Edit3, Eye, Trash2, Plus, Settings } from 'lucide-react';
+import { getKpiStatus, getStatusColor } from '../../lib/kpi-utils';
+import { ExportButton } from '@/components/common/ExportButton';
 
 interface ActivityMatrixModalProps {
     isOpen: boolean;
@@ -107,19 +109,47 @@ export function ActivityMatrixModal({
     // Helper to get or create cell data
     const getCellData = (step: SubActivity, roleId: string): MatrixRoleData => {
         let cell = step.roles.find(r => r.roleId === roleId);
-        if (!cell) {
-            // Return empty mock for rendering; actally likely need to update state if editing
-            return {
-                roleId,
-                roleName: '',
-                sopContent: '',
-                standard: '',
-                piName: '',
-                target: '',
-                unit: ''
-            };
+
+        // Migration / Initialization
+        if (cell) {
+            // Migrate legacy 'standard' -> 'processStandard' if needed
+            if (cell.standard && !cell.processStandard && !cell.qualityStandard) {
+                cell.processStandard = cell.standard;
+            }
+            // Migrate legacy 'piName' -> 'kpis' if needed
+            if (cell.piName && (!cell.kpis || cell.kpis.length === 0)) {
+                cell.kpis = [{
+                    id: generateId(),
+                    name: cell.piName,
+                    target: cell.target || '',
+                    unit: cell.unit || '',
+                    actual: cell.actual,
+                    mingdaoId: cell.mingdaoId,
+                    direction: 'higher',
+                    warning: '',
+                    critical: ''
+                }];
+            }
+            // Ensure arrays exist and string fields valid
+            if (!cell.kpis) cell.kpis = [];
+            if (cell.processStandard === undefined) cell.processStandard = '';
+            if (cell.qualityStandard === undefined) cell.qualityStandard = '';
+
+            return cell;
         }
-        return cell;
+
+        // Return empty mock for rendering
+        return {
+            roleId,
+            roleName: '',
+            sopContent: '',
+            processStandard: '',
+            qualityStandard: '',
+            kpis: [],
+            // Legacy
+            standard: '',
+            piName: ''
+        };
     };
 
     // Update cell helper
@@ -128,25 +158,73 @@ export function ActivityMatrixModal({
         const step = newData[stepIndex];
 
         let cellIndex = step.roles.findIndex(r => r.roleId === roleId);
+        const cellData: MatrixRoleData = cellIndex !== -1 ? { ...step.roles[cellIndex] } : {
+            roleId,
+            roleName: localRoles.find(r => r.id === roleId)?.name || '',
+            sopContent: '',
+            processStandard: '',
+            qualityStandard: '',
+            kpis: [],
+            standard: ''
+        };
+
+        // Safety check for kpis if we ever update other fields
+        if (!cellData.kpis) cellData.kpis = [];
+
+        (cellData as any)[field] = value;
+
         if (cellIndex === -1) {
-            // Create new cell
-            step.roles.push({
+            step.roles.push(cellData);
+        } else {
+            step.roles[cellIndex] = cellData;
+        }
+        setLocalData(newData);
+    };
+
+    // Helper for updating KPIs
+    const updateKPI = (stepIndex: number, roleId: string, kpiIndex: number | null, kpiField: string | null, value: any, action: 'add' | 'update' | 'delete') => {
+        const newData = [...localData];
+        const step = newData[stepIndex];
+        let cellIndex = step.roles.findIndex(r => r.roleId === roleId);
+
+        // Ensure cell exists
+        if (cellIndex === -1) {
+            const newCell: MatrixRoleData = {
                 roleId,
                 roleName: localRoles.find(r => r.id === roleId)?.name || '',
                 sopContent: '',
-                standard: '',
-                piName: '',
+                processStandard: '',
+                qualityStandard: '',
+                kpis: [],
+                standard: ''
+            };
+            step.roles.push(newCell);
+            cellIndex = step.roles.length - 1;
+        }
+
+        const cell = step.roles[cellIndex];
+        // Ensure immutability for React state (shallow copy cell at least)
+        step.roles[cellIndex] = { ...cell };
+        const currentCell = step.roles[cellIndex];
+
+        if (!currentCell.kpis) currentCell.kpis = [];
+
+        if (action === 'add') {
+            currentCell.kpis.push({
+                id: generateId(),
+                name: '',
                 target: '',
                 unit: '',
-                [field]: value
+                direction: 'higher',
+                warning: '',
+                critical: ''
             });
-        } else {
-            // Update existing
-            step.roles[cellIndex] = {
-                ...step.roles[cellIndex],
-                [field]: value
-            };
+        } else if (action === 'delete' && kpiIndex !== null) {
+            currentCell.kpis.splice(kpiIndex, 1);
+        } else if (action === 'update' && kpiIndex !== null && kpiField) {
+            (currentCell.kpis[kpiIndex] as any)[kpiField] = value;
         }
+
         setLocalData(newData);
     };
 
@@ -180,13 +258,14 @@ export function ActivityMatrixModal({
                                 </button>
                             </div>
                         )}
+                        <ExportButton targetId="matrix-content" fileName={`${activityName}-责任矩阵`} />
                         <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full"><X size={20} /></button>
                     </div>
                 </div>
 
                 {/* CONTENT */}
                 <div className="flex-1 overflow-auto bg-slate-50/50 dark:bg-slate-900/50 p-6">
-                    <div className="min-w-fit border border-slate-300 dark:border-slate-600 rounded-lg overflow-hidden bg-white dark:bg-slate-800 shadow-sm inline-block">
+                    <div id="matrix-content" className="min-w-fit border border-slate-300 dark:border-slate-600 rounded-lg overflow-hidden bg-white dark:bg-slate-800 shadow-sm inline-block">
 
                         <table className="text-sm text-left border-collapse">
                             {/* THEAD */}
@@ -201,7 +280,7 @@ export function ActivityMatrixModal({
                                     {localRoles.map(role => {
                                         const theme = THEME_COLORS[role.colorTheme || 'slate'] || THEME_COLORS.slate;
                                         return (
-                                            <th key={role.id} colSpan={3} className={`px-4 py-2 text-center border-r border-b border-slate-300 ${theme.bg} ${theme.text}`}>
+                                            <th key={role.id} colSpan={4} className={`px-4 py-2 text-center border-r border-b border-slate-300 ${theme.bg} ${theme.text}`}>
                                                 <div className="flex items-center justify-center gap-2 group">
                                                     {activeTab === 'edit' ? (
                                                         <>
@@ -238,14 +317,15 @@ export function ActivityMatrixModal({
                                     )}
                                 </tr>
 
-                                {/* Row 2: Sub-headers (SOP | Standard | KPI) */}
+                                {/* Row 2: Sub-headers (SOP | Process Std | Quality Std | KPI) */}
                                 <tr className="text-xs text-slate-500 bg-slate-50">
                                     <th className="px-4 py-2 border-r border-b border-slate-300 sticky left-0 bg-slate-50 z-10"></th>
                                     {localRoles.map(role => (
                                         <React.Fragment key={role.id}>
                                             <th className="px-3 py-1 border-r border-b border-slate-200 w-[200px] text-center font-normal">标准 SOP / 任务</th>
-                                            <th className="px-3 py-1 border-r border-b border-slate-200 w-[150px] text-center font-normal">工艺 / 质量标准</th>
-                                            <th className="px-3 py-1 border-r border-b border-slate-200 w-[150px] text-center font-normal">绩效 PI (Target)</th>
+                                            <th className="px-3 py-1 border-r border-b border-slate-200 w-[150px] text-center font-normal">工艺标准</th>
+                                            <th className="px-3 py-1 border-r border-b border-slate-200 w-[150px] text-center font-normal">质量标准</th>
+                                            <th className="px-3 py-1 border-r border-b border-slate-200 w-[180px] text-center font-normal">绩效 PI (Targets)</th>
                                         </React.Fragment>
                                     ))}
                                     {activeTab === 'edit' && <th className="border-b border-slate-300"></th>}
@@ -276,7 +356,7 @@ export function ActivityMatrixModal({
                                                     </button>
                                                 </div>
                                             ) : (
-                                                step.name
+                                                <div className="whitespace-pre-wrap break-words max-w-[180px]">{step.name}</div>
                                             )}
                                         </td>
 
@@ -289,77 +369,104 @@ export function ActivityMatrixModal({
                                                     <td className="px-2 py-2 border-r border-slate-100 align-top">
                                                         {activeTab === 'edit' ? (
                                                             <textarea
-                                                                className="w-full h-16 text-xs p-1 border border-slate-200 rounded resize-none focus:border-blue-400 outline-none"
+                                                                className="w-full h-24 text-xs p-1 border border-slate-200 rounded resize-none focus:border-blue-400 outline-none"
                                                                 placeholder="任务描述..."
                                                                 value={cell.sopContent || ''}
                                                                 onChange={(e) => updateCell(idx, role.id, 'sopContent', e.target.value)}
                                                             />
                                                         ) : (
-                                                            <div className="text-xs whitespace-pre-wrap text-slate-700">{cell.sopContent}</div>
+                                                            <div className="text-xs whitespace-pre-wrap break-words text-slate-700">{cell.sopContent}</div>
                                                         )}
                                                     </td>
 
-                                                    {/* Standard */}
+                                                    {/* Process Standard */}
                                                     <td className="px-2 py-2 border-r border-slate-100 align-top">
                                                         {activeTab === 'edit' ? (
                                                             <textarea
-                                                                className="w-full h-16 text-xs p-1 border border-slate-200 rounded resize-none focus:border-blue-400 outline-none"
-                                                                placeholder="质量标准..."
-                                                                value={cell.standard || ''}
-                                                                onChange={(e) => updateCell(idx, role.id, 'standard', e.target.value)}
+                                                                className="w-full h-24 text-xs p-1 border border-slate-200 rounded resize-none focus:border-blue-400 outline-none"
+                                                                placeholder="工艺标准..."
+                                                                value={cell.processStandard || ''}
+                                                                onChange={(e) => updateCell(idx, role.id, 'processStandard', e.target.value)}
                                                             />
                                                         ) : (
-                                                            <div className="text-xs whitespace-pre-wrap text-slate-600">{cell.standard}</div>
+                                                            <div className="text-xs whitespace-pre-wrap break-words text-slate-600">{cell.processStandard}</div>
                                                         )}
                                                     </td>
 
-                                                    {/* KPI */}
-                                                    <td className="px-2 py-2 border-r border-slate-200 align-top bg-slate-50/30">
+                                                    {/* Quality Standard */}
+                                                    <td className="px-2 py-2 border-r border-slate-100 align-top">
                                                         {activeTab === 'edit' ? (
-                                                            <div className="flex flex-col gap-1">
-                                                                <input
-                                                                    className="w-full text-xs p-1 border border-slate-200 rounded"
-                                                                    placeholder="指标名称"
-                                                                    value={cell.piName || ''}
-                                                                    onChange={(e) => updateCell(idx, role.id, 'piName', e.target.value)}
-                                                                />
-                                                                <div className="flex gap-1">
-                                                                    <input
-                                                                        className="w-1/2 text-xs p-1 border border-slate-200 rounded"
-                                                                        placeholder="目标"
-                                                                        value={cell.target || ''}
-                                                                        onChange={(e) => updateCell(idx, role.id, 'target', e.target.value)}
-                                                                    />
-                                                                    <input
-                                                                        className="w-1/2 text-xs p-1 border border-slate-200 rounded"
-                                                                        placeholder="单位"
-                                                                        value={cell.unit || ''}
-                                                                        onChange={(e) => updateCell(idx, role.id, 'unit', e.target.value)}
-                                                                    />
-                                                                </div>
-                                                                <input
-                                                                    className="w-full text-[10px] p-1 border border-slate-200 rounded mt-1 text-slate-500 font-mono bg-slate-50 focus:bg-white"
-                                                                    placeholder="Mingdao ID (Data Binding)"
-                                                                    value={cell.mingdaoId || ''}
-                                                                    onChange={(e) => updateCell(idx, role.id, 'mingdaoId', e.target.value)}
-                                                                />
-                                                            </div>
+                                                            <textarea
+                                                                className="w-full h-24 text-xs p-1 border border-slate-200 rounded resize-none focus:border-blue-400 outline-none"
+                                                                placeholder="质量标准..."
+                                                                value={cell.qualityStandard || ''}
+                                                                onChange={(e) => updateCell(idx, role.id, 'qualityStandard', e.target.value)}
+                                                            />
                                                         ) : (
-                                                            <div className="flex flex-col gap-1">
-                                                                {cell.piName && (
-                                                                    <>
-                                                                        <span className="text-xs font-bold text-slate-500">{cell.piName}</span>
-                                                                        <div className="flex justify-between items-baseline">
-                                                                            <span className="text-[10px] text-slate-400">Target: {cell.target}{cell.unit}</span>
-                                                                            <span className={`text-sm font-mono font-bold ${cell.actual ? 'text-blue-600' : 'text-slate-300'}`}>
-                                                                                {cell.actual || '--'}
-                                                                                {cell.mingdaoId && <span className="text-green-500 ml-1" title="Live Data ID Bound">●</span>}
-                                                                            </span>
-                                                                        </div>
-                                                                    </>
-                                                                )}
-                                                            </div>
+                                                            <div className="text-xs whitespace-pre-wrap break-words text-slate-600">{cell.qualityStandard}</div>
                                                         )}
+                                                    </td>
+
+                                                    {/* KPIs (Multiple) */}
+                                                    <td className="px-2 py-2 border-r border-slate-200 align-top bg-slate-50/30">
+                                                        <div className="flex flex-col gap-2">
+                                                            {cell.kpis && cell.kpis.map((kpi, kIdx) => (
+                                                                <div key={kpi.id} className="border-b border-slate-200 pb-2 last:border-0 last:pb-0">
+                                                                    {activeTab === 'edit' ? (
+                                                                        <div className="flex flex-col gap-1 relative group/kpi">
+                                                                            <button
+                                                                                onClick={() => updateKPI(idx, role.id, kIdx, null, null, 'delete')}
+                                                                                className="absolute -right-1 -top-1 text-slate-300 hover:text-rose-500 opacity-0 group-hover/kpi:opacity-100"
+                                                                            >
+                                                                                <X size={12} />
+                                                                            </button>
+                                                                            <input
+                                                                                className="w-full text-xs p-1 border border-slate-200 rounded font-medium"
+                                                                                placeholder="指标名称"
+                                                                                value={kpi.name}
+                                                                                onChange={(e) => updateKPI(idx, role.id, kIdx, 'name', e.target.value, 'update')}
+                                                                            />
+                                                                            <div className="flex gap-1">
+                                                                                <input
+                                                                                    className="w-1/2 text-xs p-1 border border-slate-200 rounded"
+                                                                                    placeholder="目标"
+                                                                                    value={kpi.target}
+                                                                                    onChange={(e) => updateKPI(idx, role.id, kIdx, 'target', e.target.value, 'update')}
+                                                                                />
+                                                                                <input
+                                                                                    className="w-1/2 text-xs p-1 border border-slate-200 rounded"
+                                                                                    placeholder="单位"
+                                                                                    value={kpi.unit}
+                                                                                    onChange={(e) => updateKPI(idx, role.id, kIdx, 'unit', e.target.value, 'update')}
+                                                                                />
+                                                                            </div>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="flex flex-col gap-0.5">
+                                                                            <span className="text-xs font-bold text-slate-500 whitespace-pre-wrap break-words">{kpi.name}</span>
+                                                                            <div className="flex justify-between items-baseline text-[10px] text-slate-400">
+                                                                                <span>Target: {kpi.target}{kpi.unit}</span>
+                                                                                {kpi.actual && (
+                                                                                    <span className={`px-1.5 py-0.5 rounded font-bold ${getStatusColor(getKpiStatus(kpi.actual, kpi.target, kpi.direction, kpi.warning, kpi.critical))}`}>
+                                                                                        {kpi.actual}
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            ))}
+
+                                                            {/* Add KPI Button */}
+                                                            {activeTab === 'edit' && (
+                                                                <button
+                                                                    onClick={() => updateKPI(idx, role.id, null, null, null, 'add')}
+                                                                    className="text-[10px] text-blue-500 hover:text-blue-700 flex items-center justify-center gap-1 py-1 border border-dashed border-blue-200 rounded hover:bg-blue-50"
+                                                                >
+                                                                    <Plus size={10} /> 添加指标
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                     </td>
                                                 </React.Fragment>
                                             );
@@ -380,7 +487,8 @@ export function ActivityMatrixModal({
                                                 <Plus size={16} /> 添加步骤
                                             </button>
                                         </td>
-                                        <td colSpan={localRoles.length * 3 + 1}></td>
+                                        {/* Updated ColSpan: Roles * 4 + 1 */}
+                                        <td colSpan={localRoles.length * 4 + 1}></td>
                                     </tr>
                                 )}
                             </tbody>

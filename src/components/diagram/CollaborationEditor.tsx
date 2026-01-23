@@ -17,15 +17,16 @@ import {
     useReactFlow,
     ConnectionLineType,
     MarkerType,
-    reconnectEdge,
     Node,
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
+} from 'reactflow';
+import 'reactflow/dist/style.css';
 import { Box, LayoutTemplate, Eye, Pencil, MousePointer2, Move, Undo2, Redo2 } from 'lucide-react';
 import GroupNode from './nodes/GroupNode';
 import ProcessNode from './nodes/ProcessNode';
 import CustomEdge from './edges/CustomEdge';
 import { saveDiagram, getDiagram } from '@/actions/diagram';
+import { saveDiagramDsl } from '@/actions/diagram-dsl';
+import { l1ToReactFlow, reactFlowToL1, createDefaultDsl } from '@/lib/engine/transformer';
 import { useUndoRedo } from '@/hooks/useUndoRedo';
 
 const nodeTypes: NodeTypes = {
@@ -199,10 +200,30 @@ const EditorContent = ({ projectId }: { projectId: string }) => {
         const load = async () => {
             const res = await getDiagram(projectId);
             if (res?.success && res.data) {
-                // Restore existing diagram but inject projectId into data for interactions
-                const loadedNodes = (res.data.nodes || initialNodesTemplate).map((n: any) => ({
+                let loadedNodes: Node[] = [];
+                let loadedEdges: Edge[] = [];
+                const rawData = res.data as any;
+
+                // DETECT FORMAT: DSL vs Legacy
+                // DSL has 'l1_graph' or 'version' at root. Legacy has 'nodes'.
+                if ('l1_graph' in rawData || 'version' in rawData) {
+                    console.log('[L1 Editor] Detected DSL format, transforming...');
+                    // Use Default empty graph if l1_graph missing but wrapper exists
+                    const l1Graph = rawData.l1_graph || { layers: [], nodes: [], edges: [] };
+                    const { nodes: rfNodes, edges: rfEdges } = l1ToReactFlow(l1Graph);
+                    loadedNodes = rfNodes as any as Node[];
+                    loadedEdges = rfEdges as any as Edge[];
+                } else {
+                    // Legacy Format
+                    console.log('[L1 Editor] Detected Legacy format');
+                    loadedNodes = (rawData.nodes || initialNodesTemplate);
+                    loadedEdges = (rawData.edges || []);
+                }
+
+                // Inject projectId and Handlers
+                loadedNodes = loadedNodes.map((n: any) => ({
                     ...n,
-                    draggable: n.type === 'group' ? false : undefined, // Force lock groups
+                    draggable: n.type === 'group' ? false : undefined,
                     data: {
                         ...n.data,
                         projectId,
@@ -213,10 +234,10 @@ const EditorContent = ({ projectId }: { projectId: string }) => {
                 })) as Node[];
 
                 setNodes(loadedNodes);
-                setEdges(res.data.edges || []);
+                setEdges(loadedEdges);
                 setHasLoaded(true);
             } else {
-                // Initialize directly from template for both new projects or fallback
+                // Initialize directly from template
                 const initialNodes = initialNodesTemplate.map(n => ({
                     ...n,
                     data: { ...n.data, projectId, isEditMode, onResize: onGroupResize, hasDrillDown: false }
@@ -229,7 +250,7 @@ const EditorContent = ({ projectId }: { projectId: string }) => {
             setHasLoaded(true);
         };
         load();
-    }, [projectId, setNodes, setEdges, onGroupResize]);
+    }, [projectId, setNodes, setEdges, onGroupResize]); // removed isEditMode dep loop
 
     // UNDO / REDO HOOK
     const { undo, redo, canUndo, canRedo, takeSnapshot } = useUndoRedo({
@@ -266,7 +287,10 @@ const EditorContent = ({ projectId }: { projectId: string }) => {
     const onReconnect = useCallback(
         (oldEdge: Edge, newConnection: Connection) => {
             takeSnapshot();
-            setEdges((els) => reconnectEdge(oldEdge, newConnection, els));
+            setEdges((els) => {
+                const newEdges = els.filter((e) => e.id !== oldEdge.id);
+                return addEdge(newConnection, newEdges);
+            });
         },
         [setEdges, takeSnapshot],
     );
@@ -276,21 +300,41 @@ const EditorContent = ({ projectId }: { projectId: string }) => {
 
         setIsSaving(true);
         try {
-            // Sanitize nodes to remove non-serializable functions (onResize)
-            const cleanNodes = nodes.map(node => {
-                const { onResize, ...data } = node.data; // Strip onResize
-                return { ...node, data };
-            });
+            console.log('[L1 Editor] Saving Diagram...');
 
-            const result = await saveDiagram(projectId, cleanNodes, edges);
+            // 1. Transform current View -> L1Graph
+            const l1Graph = reactFlowToL1(nodes as any, edges as any);
+
+            // 2. Fetch Existing Data to Preserve Resources/L2
+            // We use getDiagram to get the full JSON
+            const existingRes = await getDiagram(projectId);
+            let fullDsl: any;
+
+            if (existingRes?.success && existingRes.data && ('l1_graph' in existingRes.data || 'version' in existingRes.data)) {
+                // Merge with existing DSL
+                fullDsl = {
+                    ...existingRes.data,
+                    l1_graph: l1Graph,
+                    meta: {
+                        ...(existingRes.data.meta || {}),
+                        last_updated: new Date().toISOString()
+                    }
+                };
+            } else {
+                // Initialize new DSL if none exists or legacy
+                fullDsl = createDefaultDsl(projectId);
+                fullDsl.l1_graph = l1Graph;
+            }
+
+            const result = await saveDiagramDsl(projectId, fullDsl);
             if (result.success) {
                 setLastSaved(new Date());
             } else {
-                alert('保存失败，请重试');
+                alert(`保存失败: ${result.error}`);
             }
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
-            alert('保存出错');
+            alert(`保存出错: ${err.message}`);
         } finally {
             setIsSaving(false);
         }
@@ -316,7 +360,7 @@ const EditorContent = ({ projectId }: { projectId: string }) => {
                 y: event.clientY,
             });
 
-            const newNode = {
+            const newNode: Node = {
                 id: `process-${Date.now()}`,
                 type,
                 position,
@@ -354,7 +398,7 @@ const EditorContent = ({ projectId }: { projectId: string }) => {
                 onEdgesChange={onEdgesChangeWithUndo}
                 onNodeDragStart={onNodeDragStart}
                 onConnect={onConnect}
-                onReconnect={onReconnect}
+                onEdgeUpdate={onReconnect}
                 onDrop={onDrop}
                 onDragOver={onDragOver}
                 nodeTypes={nodeTypes}

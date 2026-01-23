@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState, useEffect } from 'react';
+import { useCallback, useRef, useState, useEffect, useMemo } from 'react';
 import {
     ReactFlow,
     MiniMap,
@@ -18,17 +18,19 @@ import {
     ConnectionLineType,
     MarkerType,
     Node,
-    reconnectEdge,
     useOnSelectionChange,
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
-import { Plus, X, Circle, MousePointer2, Layers, Database, ArrowLeft, Eye, Pencil, RefreshCw, Move, Undo2, Redo2 } from 'lucide-react';
+} from 'reactflow';
+import 'reactflow/dist/style.css';
+import { Plus, X, Circle, MousePointer2, Layers, Database, ArrowLeft, Eye, Pencil, RefreshCw, Move, Undo2, Redo2, MonitorPlay } from 'lucide-react';
 import Link from 'next/link';
 
 import { saveL2Diagram, getL2Diagram } from '@/actions/diagram';
+import { saveL2DiagramDsl } from '@/actions/diagram-dsl';
+import { dslToReactFlow, reactFlowToDsl } from '@/lib/engine/transformer';
 import { syncDiagramData } from '@/actions/sync-diagram';
+import { useResourceStore } from '@/lib/store/resource-store';
 import RightSidebar from './RightSidebar';
-import ProjectDataTable from './ProjectDataTable';
+import DiagramMatrixView from './DiagramMatrixView';
 import { useUndoRedo } from '@/hooks/useUndoRedo';
 
 // Import our new L2 nodes
@@ -41,20 +43,10 @@ import CustomEdge from '../diagram/edges/CustomEdge';
 import { ActivityMatrixModal } from './ActivityMatrixModal';
 import { SubActivity } from '@/types/diagram';
 
-const nodeTypes: NodeTypes = {
-    startEvent: StartEventNode,
-    endEvent: EndEventNode,
-    activity: ActivityNode,
-    gateway: GatewayNode,
-    lane: LaneNode,
-};
-
-const edgeTypes = {
-    custom: CustomEdge,
-};
+// Node/Edge types will be defined inside component
 
 // --- Sidebar for Dragging ---
-const L2Sidebar = ({ onToggleTable }: { onToggleTable: () => void }) => {
+const L2Sidebar = ({ onToggleTable, onAddLane }: { onToggleTable: () => void; onAddLane: () => void }) => {
     const onDragStart = (event: React.DragEvent, nodeType: string, extraData?: any) => {
         event.dataTransfer.setData('application/reactflow', nodeType);
         if (extraData) {
@@ -65,6 +57,21 @@ const L2Sidebar = ({ onToggleTable }: { onToggleTable: () => void }) => {
 
     return (
         <div className="absolute top-4 left-4 z-50 flex flex-col gap-4 p-3 bg-white/95 dark:bg-zinc-900/95 backdrop-blur shadow-xl rounded-xl border border-slate-200 dark:border-zinc-800 w-16 items-center">
+
+            <div className="text-[10px] font-bold text-slate-400 uppercase text-center -mb-2">Lanes</div>
+
+            {/* Swimlane (Click or Drag) */}
+            <div
+                className="w-10 h-8 rounded border border-slate-600 bg-white flex items-center justify-center cursor-pointer hover:scale-110 transition-transform shadow-sm active:scale-95"
+                draggable
+                onDragStart={(e) => onDragStart(e, 'lane')}
+                onClick={onAddLane}
+                title="泳道 (Swimlane) - 点击或拖拽添加 (Click or Drag to Add)"
+            >
+                <Layers className="w-5 h-5 text-slate-600" />
+            </div>
+
+            <div className="h-px w-8 bg-slate-200" />
 
             <div className="text-[10px] font-bold text-slate-400 uppercase text-center -mb-2">Events</div>
 
@@ -150,8 +157,22 @@ const L2Sidebar = ({ onToggleTable }: { onToggleTable: () => void }) => {
     );
 }
 
+const nodeTypes = {
+    startEvent: StartEventNode,
+    endEvent: EndEventNode,
+    activity: ActivityNode,
+    gateway: GatewayNode,
+    lane: LaneNode,
+};
+
+const edgeTypes = {
+    custom: CustomEdge,
+};
+
 const EditorContent = ({ projectId, diagramId }: { projectId: string, diagramId: string }) => {
+
     const reactFlowWrapper = useRef<HTMLDivElement>(null);
+
     const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
     const [isSaving, setIsSaving] = useState(false);
@@ -160,7 +181,7 @@ const EditorContent = ({ projectId, diagramId }: { projectId: string, diagramId:
     const [lastSynced, setLastSynced] = useState<Date | null>(null);
     const [selectedNode, setSelectedNode] = useState<Node | null>(null);
     const [isTableOpen, setIsTableOpen] = useState(false);
-    const [isEditMode, setIsEditMode] = useState(false); // Default to View Mode
+    const [isEditMode, setIsEditMode] = useState(true); // Default to Edit Mode
     const [navMode, setNavMode] = useState<'mouse' | 'trackpad'>('mouse');
 
     // Matrix Modal State
@@ -270,19 +291,41 @@ const EditorContent = ({ projectId, diagramId }: { projectId: string, diagramId:
             if (!diagramId) return;
             const res = await getL2Diagram(diagramId);
             if (res.success && res.data) {
-                // Inject callbacks
-                const loadedNodes = (res.data.nodes || []).map((n: any) => ({
+                let loadedNodes: Node[] = [];
+                let loadedEdges: Edge[] = [];
+
+                // DETECT FORMAT: DSL vs Legacy
+                if ('lanes' in res.data && Array.isArray(res.data.lanes)) {
+                    console.log('[Editor] Detected DSL format, transforming...');
+                    const dslData = res.data as any; // Full DSL object
+                    if (dslData.resources) {
+                        useResourceStore.getState().setResources(dslData.resources);
+                    }
+
+                    const { nodes: rfNodes, edges: rfEdges } = dslToReactFlow(res.data as any, dslData.resources || { roles: [], kpi_definitions: [], data_sources: [] });
+                    loadedNodes = rfNodes as any as Node[];
+                    loadedEdges = rfEdges as any as Edge[];
+                } else {
+                    console.log('[Editor] Detected Legacy format');
+                    loadedNodes = res.data.nodes || [];
+                    loadedEdges = res.data.edges || [];
+                }
+
+                // Inject Editor-specific callbacks and flags
+                loadedNodes = loadedNodes.map((n: any) => ({
                     ...n,
                     draggable: n.type === 'lane' ? false : undefined, // Ensure locked
                     data: {
                         ...n.data,
                         projectId,
                         isEditMode,
-                        onResize: onLaneResize
+                        onResize: onLaneResize,
+                        onDelete: n.type === 'lane' ? () => onLaneDelete(n.id) : undefined
                     }
                 }));
+
                 setNodes(loadedNodes);
-                setEdges(res.data.edges || []);
+                setEdges(loadedEdges);
             } else {
                 if (nodes.length === 0) {
                     setNodes([
@@ -290,7 +333,13 @@ const EditorContent = ({ projectId, diagramId }: { projectId: string, diagramId:
                             id: 'lane-1',
                             type: 'lane',
                             position: { x: 50, y: 50 },
-                            data: { label: '默认泳道 (Role A)', projectId, isEditMode, onResize: onLaneResize },
+                            data: {
+                                label: '默认泳道 (Role A)',
+                                projectId,
+                                isEditMode,
+                                onResize: onLaneResize,
+                                onDelete: () => onLaneDelete('lane-1')
+                            },
                             style: { width: 800, height: 200 },
                             zIndex: -1,
                             draggable: false,
@@ -301,28 +350,33 @@ const EditorContent = ({ projectId, diagramId }: { projectId: string, diagramId:
         };
         load();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [diagramId, onLaneResize]); // Added onLaneResize dep
+    }, [diagramId]); // FIXED: Removed onLaneResize dependency
+
+
 
     const onSave = useCallback(async () => {
         if (!diagramId) return;
 
         setIsSaving(true);
         try {
-            // Sanitize nodes to remove non-serializable functions (onResize)
-            const cleanNodes = nodes.map(node => {
-                const { onResize, ...data } = node.data;
-                return { ...node, data };
-            });
+            // MIGRATION ON WRITE: Always save as DSL
+            console.log('[Editor] Converting to DSL for save...');
 
-            const result = await saveL2Diagram(diagramId, cleanNodes, edges);
+            // 1. Transform ReactFlow -> DSL
+            // We pass an empty meta object for now, or could fetch existing description
+            const dslGraph = reactFlowToDsl(nodes, edges, { parent_node_id: undefined });
+
+            // 2. Call new Server Action
+            const result = await saveL2DiagramDsl(diagramId, dslGraph);
+
             if (result.success) {
                 setLastSaved(new Date());
             } else {
-                alert('保存失败，请重试');
+                alert(`保存失败: ${result.error}`);
             }
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
-            alert('保存出错');
+            alert(`保存出错: ${err.message}`);
         } finally {
             setIsSaving(false);
         }
@@ -446,6 +500,11 @@ const EditorContent = ({ projectId, diagramId }: { projectId: string, diagramId:
         }
     }, [nodes.length, handleSyncDiagram]);
 
+    // Handler for deleting a lane
+    const onLaneDelete = useCallback((id: string) => {
+        setNodes((nds) => nds.filter((n) => n.id !== id));
+    }, [setNodes]);
+
     const onConnect = useCallback(
         (params: Connection) => {
             takeSnapshot();
@@ -458,7 +517,10 @@ const EditorContent = ({ projectId, diagramId }: { projectId: string, diagramId:
     const onReconnect = useCallback(
         (oldEdge: Edge, newConnection: Connection) => {
             takeSnapshot();
-            setEdges((els) => reconnectEdge(oldEdge, newConnection, els));
+            setEdges((els) => {
+                const newEdges = els.filter((e) => e.id !== oldEdge.id);
+                return addEdge(newConnection, newEdges);
+            });
         },
         [setEdges, takeSnapshot],
     );
@@ -491,6 +553,7 @@ const EditorContent = ({ projectId, diagramId }: { projectId: string, diagramId:
                     label: type === 'activity' ? '新活动' : '',
                     ...extraData,
                     onResize: type === 'lane' ? onLaneResize : undefined,
+                    onDelete: type === 'lane' ? () => onLaneDelete(newNode.id) : undefined, // Inject Delete Handler
                     projectId,
                     isEditMode
                 },
@@ -499,24 +562,56 @@ const EditorContent = ({ projectId, diagramId }: { projectId: string, diagramId:
             };
 
             if (type === 'lane') {
-                newNode.style = { width: 800, height: 200 };
+                const lastLane = (document.querySelector('.react-flow__renderer') as any)?.__reactFlowInstance?.getNodes().filter((n: any) => n.type === 'lane').pop()
+                    || (Array.from(document.querySelectorAll('[data-id^="lane-"]')).length > 0 ? { position: { x: 50 }, style: { width: 800 } } : null);
+
+                // Better approach: use 'nodes' from state if available in closure, but setNodes uses functional update. 
+                // We don't have access to current 'nodes' inside useCallback unless in dependency.
+                // BUT we can infer from default. 
+                // Actually, let's just use a safe default and fix it in post-processing or assume alignment?
+                // Wait, 'addLane' had access to 'nodes'. 'onDrop' generally relies on setNodes((nds) => ...).
+                // Accessing previous state in setNodes is possible.
+
+                // Let's do the logic INSIDE setNodes to be safe and accurate.
             }
 
-            setNodes((nds) => nds.concat(newNode));
+            setNodes((nds) => {
+                const updatedNodes = [...nds];
+                if (type === 'lane') {
+                    const lanes = updatedNodes.filter(n => n.type === 'lane');
+                    const lastLane = lanes[lanes.length - 1];
+                    const xPos = lastLane ? lastLane.position.x : 50;
+                    const width = lastLane ? (parseFloat(lastLane.style?.width as any) || 800) : 800;
+
+                    newNode.position.x = xPos; // Force Snap to Column
+                    newNode.style = { width, height: 200 };
+                    // We keep newNode.position.y from the drop
+                }
+                return updatedNodes.concat(newNode);
+            });
         },
-        [screenToFlowPosition, setNodes],
+        [screenToFlowPosition, setNodes, onLaneResize, onLaneDelete],
     );
 
     const addLane = () => {
         const lastLane = nodes.filter(n => n.type === 'lane').pop();
-        const yPos = lastLane ? lastLane.position.y + (lastLane.measured?.height || 200) : 50;
+        const yPos = lastLane ? lastLane.position.y + (lastLane.measured?.height || parseFloat(lastLane.style?.height as any) || 200) : 50;
+        const xPos = lastLane ? lastLane.position.x : 50;
+        const width = lastLane ? (lastLane.style?.width || 800) : 800;
 
+        const newId = `lane-${Date.now()}`;
         const newLane: Node = {
-            id: `lane-${Date.now()}`,
+            id: newId,
             type: 'lane',
-            position: { x: 50, y: yPos },
-            data: { label: '新角色 (New Role)', projectId, isEditMode, onResize: onLaneResize },
-            style: { width: 800, height: 200 },
+            position: { x: xPos, y: yPos },
+            data: {
+                label: '新角色 (New Role)',
+                projectId,
+                isEditMode,
+                onResize: onLaneResize,
+                onDelete: () => onLaneDelete(newId)
+            },
+            style: { width: width, height: 200 },
             zIndex: -1,
             draggable: false, // Lock lanes
         };
@@ -526,7 +621,7 @@ const EditorContent = ({ projectId, diagramId }: { projectId: string, diagramId:
     return (
         <div className="w-full h-full bg-slate-50 dark:bg-zinc-950 relative" ref={reactFlowWrapper}>
             {/* Show Sidebar only in Edit Mode */}
-            {isEditMode && <L2Sidebar onToggleTable={() => setIsTableOpen(!isTableOpen)} />}
+            {isEditMode && <L2Sidebar onToggleTable={() => setIsTableOpen(!isTableOpen)} onAddLane={addLane} />}
 
             {/* Back to Project Button - Always Visible */}
             <Link
@@ -552,7 +647,7 @@ const EditorContent = ({ projectId, diagramId }: { projectId: string, diagramId:
             )}
 
             {/* GLOBAL DATA TABLE DRAWER */}
-            <ProjectDataTable
+            <DiagramMatrixView
                 isOpen={isTableOpen}
                 onClose={() => setIsTableOpen(false)}
                 nodes={nodes}
@@ -589,7 +684,7 @@ const EditorContent = ({ projectId, diagramId }: { projectId: string, diagramId:
                 }}
                 onNodeDragStart={onNodeDragStart}
                 onConnect={onConnect}
-                onReconnect={onReconnect}
+                onEdgeUpdate={onReconnect}
                 onDrop={onDrop}
                 onDragOver={onDragOver}
                 nodeTypes={nodeTypes}
@@ -710,6 +805,19 @@ const EditorContent = ({ projectId, diagramId }: { projectId: string, diagramId:
                     </div>
 
                     <div className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur p-2 rounded-lg border border-slate-200 dark:border-zinc-800 shadow-sm flex items-center gap-3">
+                        {/* Monitor View Button */}
+                        <Link
+                            href={`/project/${projectId}/monitor?diagramId=${diagramId}`}
+                            target="_blank"
+                            className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded transition-all bg-slate-800 text-white hover:bg-slate-700 shadow-sm hover:shadow"
+                            title="打开实时监控大屏 (Open Monitor View)"
+                        >
+                            <MonitorPlay className="w-3.5 h-3.5" />
+                            <span>监控大屏</span>
+                        </Link>
+                    </div>
+
+                    <div className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur p-2 rounded-lg border border-slate-200 dark:border-zinc-800 shadow-sm flex items-center gap-3">
                         {/* Sync Button */}
                         <button
                             onClick={handleSyncDiagram}
@@ -733,18 +841,7 @@ const EditorContent = ({ projectId, diagramId }: { projectId: string, diagramId:
                     </div>
                 </Panel>
 
-                {/* Add Lane Button - Only in Edit Mode */}
-                {isEditMode && (
-                    <Panel position="top-center">
-                        <button
-                            onClick={addLane}
-                            className="flex items-center gap-2 bg-white dark:bg-zinc-800 px-4 py-2 rounded-full shadow-lg border border-slate-200 dark:border-zinc-700 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 font-medium transition-all"
-                        >
-                            <Layers className="w-4 h-4" />
-                            添加泳道 (Add Lane)
-                        </button>
-                    </Panel>
-                )}
+
             </ReactFlow>
         </div>
     );

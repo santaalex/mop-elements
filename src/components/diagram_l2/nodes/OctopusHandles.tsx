@@ -1,4 +1,4 @@
-import { Handle, Position } from '@xyflow/react';
+import { Handle, Position } from 'reactflow';
 
 export const OctopusHandles = () => {
     // Base styles without the '!' prefix hack

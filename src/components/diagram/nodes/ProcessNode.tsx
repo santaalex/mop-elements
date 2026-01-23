@@ -1,5 +1,5 @@
 import { memo, useState, useRef, useEffect } from 'react';
-import { Handle, Position, NodeProps, NodeResizer } from '@xyflow/react';
+import { Handle, Position, NodeProps, NodeResizer } from 'reactflow';
 import { Plus, Loader2, Eye } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { getOrCreateL2Diagram } from '@/actions/diagram';
@@ -85,17 +85,18 @@ const ProcessNode = ({ id, data, selected }: NodeProps) => {
 
             {/* Handles only visible/interactive in Edit Mode if desired, OR keep them but maybe hide if not editing? 
                 Actually, usually View Mode hides handles to look cleaner.            {/* HANDLES - Always render (don't use hidden) to preserve edges, just hide visually in View Mode */}
-            <Handle type="target" position={Position.Top} id="target-top" className={`!${handleStyle} -mt-1.5 z-50 ${!isEditMode ? '!opacity-0 !pointer-events-none' : 'opacity-100'}`} />
-            <Handle type="source" position={Position.Top} id="source-top" className={`!${handleStyle} -mt-1.5 z-50 ${!isEditMode ? '!opacity-0 !pointer-events-none' : 'opacity-100'}`} />
+            {/* HANDLES - Always interactive, visible on hover or in edit mode */}
+            <Handle type="target" position={Position.Top} id="target-top" className={`!${handleStyle} -mt-1.5 z-50 transition-opacity opacity-0 group-hover:opacity-100 ${isEditMode ? 'opacity-100' : ''}`} />
+            <Handle type="source" position={Position.Top} id="source-top" className={`!${handleStyle} -mt-1.5 z-50 transition-opacity opacity-0 group-hover:opacity-100 ${isEditMode ? 'opacity-100' : ''}`} />
 
-            <Handle type="target" position={Position.Bottom} id="target-bottom" className={`!${handleStyle} -mb-1.5 z-50 ${!isEditMode ? '!opacity-0 !pointer-events-none' : 'opacity-100'}`} />
-            <Handle type="source" position={Position.Bottom} id="source-bottom" className={`!${handleStyle} -mb-1.5 z-50 ${!isEditMode ? '!opacity-0 !pointer-events-none' : 'opacity-100'}`} />
+            <Handle type="target" position={Position.Bottom} id="target-bottom" className={`!${handleStyle} -mb-1.5 z-50 transition-opacity opacity-0 group-hover:opacity-100 ${isEditMode ? 'opacity-100' : ''}`} />
+            <Handle type="source" position={Position.Bottom} id="source-bottom" className={`!${handleStyle} -mb-1.5 z-50 transition-opacity opacity-0 group-hover:opacity-100 ${isEditMode ? 'opacity-100' : ''}`} />
 
-            <Handle type="target" position={Position.Left} id="target-left" className={`!${handleStyle} -ml-1.5 z-50 ${!isEditMode ? '!opacity-0 !pointer-events-none' : 'opacity-100'}`} />
-            <Handle type="source" position={Position.Left} id="source-left" className={`!${handleStyle} -ml-1.5 z-50 ${!isEditMode ? '!opacity-0 !pointer-events-none' : 'opacity-100'}`} />
+            <Handle type="target" position={Position.Left} id="target-left" className={`!${handleStyle} -ml-1.5 z-50 transition-opacity opacity-0 group-hover:opacity-100 ${isEditMode ? 'opacity-100' : ''}`} />
+            <Handle type="source" position={Position.Left} id="source-left" className={`!${handleStyle} -ml-1.5 z-50 transition-opacity opacity-0 group-hover:opacity-100 ${isEditMode ? 'opacity-100' : ''}`} />
 
-            <Handle type="target" position={Position.Right} id="target-right" className={`!${handleStyle} -mr-1.5 z-50 ${!isEditMode ? '!opacity-0 !pointer-events-none' : 'opacity-100'}`} />
-            <Handle type="source" position={Position.Right} id="source-right" className={`!${handleStyle} -mr-1.5 z-50 ${!isEditMode ? '!opacity-0 !pointer-events-none' : 'opacity-100'}`} />
+            <Handle type="target" position={Position.Right} id="target-right" className={`!${handleStyle} -mr-1.5 z-50 transition-opacity opacity-0 group-hover:opacity-100 ${isEditMode ? 'opacity-100' : ''}`} />
+            <Handle type="source" position={Position.Right} id="source-right" className={`!${handleStyle} -mr-1.5 z-50 transition-opacity opacity-0 group-hover:opacity-100 ${isEditMode ? 'opacity-100' : ''}`} />
 
             {/* Main Card Content */}
             <div className={`

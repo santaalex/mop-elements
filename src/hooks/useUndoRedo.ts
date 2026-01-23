@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Node, Edge } from '@xyflow/react';
+import { Node, Edge } from 'reactflow';
 
 type HistoryItem = {
     nodes: Node[];

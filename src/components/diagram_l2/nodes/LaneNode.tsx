@@ -1,5 +1,5 @@
 import { memo, useState, useRef, useEffect } from 'react';
-import { NodeProps, NodeResizer, useReactFlow } from '@xyflow/react';
+import { NodeProps, NodeResizer, useReactFlow } from 'reactflow';
 import { X, Pencil } from 'lucide-react';
 
 const LaneNode = ({ id, data, selected }: NodeProps) => {
@@ -20,8 +20,9 @@ const LaneNode = ({ id, data, selected }: NodeProps) => {
 
     // Sync local state if data.label changes (e.g. via Sidebar)
     useEffect(() => {
+        console.log('[LaneNode] data.label changed to:', data.label, 'Id:', id);
         setLabel((data.label as string) || '新泳道');
-    }, [data.label]);
+    }, [data.label, id]);
 
     useEffect(() => {
         if (isEditing && inputRef.current) {

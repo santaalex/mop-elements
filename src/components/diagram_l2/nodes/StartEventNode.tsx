@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Handle, Position, NodeProps } from '@xyflow/react';
+import { Handle, Position, NodeProps } from 'reactflow';
 import { OctopusHandles } from './OctopusHandles';
 
 const StartEventNode = ({ selected }: NodeProps) => {

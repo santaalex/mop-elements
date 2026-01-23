@@ -5,6 +5,7 @@ import prisma from '@/lib/db';
 import DeleteProjectButton from '@/components/dashboard/DeleteProjectButton';
 import ProjectImporter from '@/components/dashboard/ProjectImporter';
 import ProjectExporter from '@/components/dashboard/ProjectExporter';
+import EditProjectButton from '@/components/dashboard/EditProjectButton';
 
 async function getProjects(userId: string) {
     return await prisma.project.findMany({
@@ -70,6 +71,11 @@ export default async function DashboardPage() {
                         >
                             {/* Delete Button - Outside Link */}
                             <div className="absolute top-4 right-4 flex items-center gap-2 z-20">
+                                <EditProjectButton
+                                    projectId={project.id}
+                                    projectName={project.name}
+                                    projectDescription={project.description}
+                                />
                                 <ProjectExporter projectId={project.id} projectName={project.name} />
                                 <DeleteProjectButton projectId={project.id} projectName={project.name} />
                             </div>

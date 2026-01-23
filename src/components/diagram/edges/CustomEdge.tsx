@@ -5,7 +5,7 @@ import {
     EdgeProps,
     getSmoothStepPath,
     useReactFlow,
-} from '@xyflow/react';
+} from 'reactflow';
 
 export default function CustomEdge({
     id,
@@ -21,7 +21,8 @@ export default function CustomEdge({
     selected,
 }: EdgeProps) {
     // 1. Calculate the path string for a smoothstep edge
-    const [edgePath, labelX, labelY] = getSmoothStepPath({
+    // 1. Calculate the path string for a smoothstep edge
+    const [edgePath, pathLabelX, pathLabelY] = getSmoothStepPath({
         sourceX,
         sourceY,
         sourcePosition,
@@ -34,7 +35,14 @@ export default function CustomEdge({
     const [isEditing, setIsEditing] = useState(false);
     const [labelText, setLabelText] = useState((data?.label as string) || '');
     const inputRef = useRef<HTMLInputElement>(null);
-    const { setEdges } = useReactFlow();
+    const { setEdges, screenToFlowPosition } = useReactFlow();
+
+    // Determine final label position (custom or default center)
+    const customX = data?.labelX as number | undefined;
+    const customY = data?.labelY as number | undefined;
+
+    const finalLabelX = typeof customX === 'number' ? customX : pathLabelX;
+    const finalLabelY = typeof customY === 'number' ? customY : pathLabelY;
 
     // Sync internal state if data changes externally
     useEffect(() => {
@@ -68,17 +76,26 @@ export default function CustomEdge({
         }
     };
 
-    // If no label and not editing, show a small interactive area or nothing?
-    // User asked for "Double click to edit". 
-    // We need a hit area. The edge itself is the hit area for selection.
-    // But how to trigger "Edit Label" if there is NO label yet? 
-    // Usually double clicking the EDGE PATH triggers it.
+    const handlePathDoubleClick = (event: React.MouseEvent) => {
+        event.stopPropagation();
+        const pos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
 
-    // Strategy:
-    // 1. Double click on the PATH -> Start Editing (handled by onEdgeDoubleClick in parent? Or generic listener?)
-    //    React Flow `onEdgeDoubleClick` is on the Flow component.
-    //    But we want encapsulated logic.
-    //    Actually, we can put a pointer-events-all div at the label position as a "Label Placeholder".
+        setEdges((edges) =>
+            edges.map((e) =>
+                e.id === id
+                    ? {
+                        ...e,
+                        data: {
+                            ...e.data,
+                            labelX: pos.x,
+                            labelY: pos.y
+                        }
+                    }
+                    : e
+            )
+        );
+        setIsEditing(true);
+    };
 
     const edgeStyle = {
         ...style,
@@ -90,11 +107,23 @@ export default function CustomEdge({
     return (
         <>
             <BaseEdge path={edgePath} markerEnd={markerEnd} style={edgeStyle} />
+
+            {/* Invisible interaction path for easier clicking (Wide hit area) */}
+            <path
+                d={edgePath}
+                fill="none"
+                stroke="transparent"
+                strokeWidth={20}
+                className="react-flow__edge-interaction"
+                style={{ cursor: 'pointer', pointerEvents: 'stroke' }}
+                onDoubleClick={handlePathDoubleClick}
+            />
+
             <EdgeLabelRenderer>
                 <div
                     style={{
                         position: 'absolute',
-                        transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+                        transform: `translate(-50%, -50%) translate(${finalLabelX}px, ${finalLabelY}px)`,
                         fontSize: 12,
                         // everything inside EdgeLabelRenderer has no pointer events by default
                         // if you want to interact with the label, set pointerEvents: all
@@ -113,7 +142,10 @@ export default function CustomEdge({
                         />
                     ) : (
                         <div
-                            onDoubleClick={() => setIsEditing(true)}
+                            onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                setIsEditing(true);
+                            }}
                             className={`
                         px-2 py-0.5 rounded cursor-pointer transition-all
                         ${labelText
@@ -121,7 +153,7 @@ export default function CustomEdge({
                                     : 'w-6 h-6 bg-transparent hover:bg-slate-200/50 rounded-full flex items-center justify-center group'
                                 }
                     `}
-                            title="双击添加标签"
+                            title="双击连线添加标签"
                         >
                             {labelText || (
                                 // Invisible hit target that reveals on hover (or if selected)

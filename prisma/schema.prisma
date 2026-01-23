@@ -50,6 +50,8 @@ model Project {
   l2Diagrams PoolSwimlaneDiagram[]
   processKpis ProcessKPI[]
   taskPis     TaskPI[]
+  
+  processInstances ProcessInstance[] // Added back-relation
 }
 
 model PoolSwimlaneDiagram {
@@ -101,4 +103,56 @@ model TaskPI {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// --- Digital Twin Engine Models ---
+
+// A - The Instance (The "Train" or "Passenger")
+model ProcessInstance {
+  id        String   @id // External Trace ID (e.g. Order No)
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  status    String   // RUNNING, COMPLETED, SUSPENDED
+  
+  // Current Position
+  currentNodeId String? // The Node ID from ReactFlow
+  enterNodeTime DateTime? // When did it arrive at this node?
+  
+  startTime DateTime
+  endTime   DateTime?
+  
+  logs      ProcessLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// B - The Log (The History Tape for Analysis)
+model ProcessLog {
+  id         String   @id @default(uuid())
+  instanceId String
+  instance   ProcessInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  
+  nodeId     String
+  action     String   // ENTER, LEAVE, SUSPEND, RESUME
+  
+  payload    String?  // JSON snapshot of business data at this moment
+  operator   String?  // Who did it?
+  
+  timestamp  DateTime
+  duration   Int?     // Time spent in previous node (ms)
+}
+
+// C - The Snapshot (The Real-time Dashboard Cache)
+model NodeRealtimeStats {
+  nodeId       String @id // ReactFlow Node ID
+  projectId    String // For filtering
+  
+  activeCount  Int    // How many instances are currently here?
+  avgWaitTime  Float  // Average wait time of current instances (min)
+  
+  status       String // NORMAL, WARNING, CRITICAL
+  
+  lastUpdated  DateTime @updatedAt
 }

@@ -1,29 +1,30 @@
 'use server'
 
-import { z } from 'zod'
 import { redirect } from 'next/navigation'
 import { hashPassword, verifyPassword } from '@/lib/auth-utils'
 import prisma from '@/lib/db'
 import { createSession, deleteSession } from '@/lib/session'
-
-// Simple validation schemas (if we had zod installed, we'd use it, but manual is fine too or minimal zod)
-// Actually we didn't install zod, let's install it or just do manual checks?
-// Wait, standard nextjs usually suggests zod. I'll do manual for speed/robustness without internet.
-// Actually I see I didn't install zod. I will do simple checks.
+import { loginSchema, registerSchema } from '@/lib/validations/auth'
 
 export async function register(prevState: any, formData: FormData) {
-    const email = formData.get('email') as string
-    const password = formData.get('password') as string
-    const name = formData.get('name') as string
-
-    if (!email || !password || password.length < 6) {
-        return { error: 'Invalid input. Password must be at least 6 chars.' }
+    const rawData = {
+        email: formData.get('email'),
+        password: formData.get('password'),
+        name: formData.get('name'),
     }
+
+    const validation = registerSchema.safeParse(rawData);
+
+    if (!validation.success) {
+        return { error: validation.error.flatten().fieldErrors.email?.[0] || validation.error.flatten().fieldErrors.password?.[0] || '输入无效' };
+    }
+
+    const { email, password, name } = validation.data;
 
     // 1. Check if user exists
     const existingUser = await prisma.user.findUnique({ where: { email } })
     if (existingUser) {
-        return { error: 'User already exists.' }
+        return { error: '该邮箱已被注册' }
     }
 
     // 2. Create User
@@ -57,13 +58,23 @@ export async function register(prevState: any, formData: FormData) {
 }
 
 export async function login(prevState: any, formData: FormData) {
-    const email = formData.get('email') as string
-    const password = formData.get('password') as string
+    const rawData = {
+        email: formData.get('email'),
+        password: formData.get('password'),
+    }
+
+    const validation = loginSchema.safeParse(rawData);
+
+    if (!validation.success) {
+        return { error: '邮箱或密码格式错误' }
+    }
+
+    const { email, password } = validation.data;
 
     const user = await prisma.user.findUnique({ where: { email } })
 
     if (!user || !(await verifyPassword(password, user.passwordHash))) {
-        return { error: 'Invalid credentials.' }
+        return { error: '邮箱或密码错误' }
     }
 
     // Pass user.role from DB

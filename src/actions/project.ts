@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import prisma from '@/lib/db'
 import { getSession } from '@/lib/session'
 import { revalidatePath } from 'next/cache'
+import { createProjectSchema, updateProjectSchema } from '@/lib/validations/project'
 
 export async function createProject(prevState: any, formData: FormData) {
     console.log('--- createProject action started ---')
@@ -13,13 +14,18 @@ export async function createProject(prevState: any, formData: FormData) {
         return { error: '未授权访问，请先登录' }
     }
 
-    const name = formData.get('name') as string
-    const description = formData.get('description') as string
-    console.log('Inputs:', { name, description })
-
-    if (!name || name.trim().length === 0) {
-        return { error: '项目名称不能为空' }
+    const rawData = {
+        name: formData.get('name'),
+        description: formData.get('description'),
     }
+
+    const validation = createProjectSchema.safeParse(rawData);
+
+    if (!validation.success) {
+        return { error: validation.error.flatten().fieldErrors.name?.[0] || '输入无效' };
+    }
+
+    const { name, description } = validation.data;
 
     let projectId
     try {
@@ -27,7 +33,7 @@ export async function createProject(prevState: any, formData: FormData) {
         const project = await prisma.project.create({
             data: {
                 name: name,
-                description: description,
+                description: description || '',
                 userId: session.user.id,
                 data: '{}', // Initialize with empty JSON string
             },
@@ -62,5 +68,44 @@ export async function deleteProject(projectId: string) {
     } catch (error: any) {
         console.error('Failed to delete project:', error)
         return { error: '删除失败' }
+    }
+}
+
+export async function updateProject(projectId: string, formData: FormData) {
+    const session = await getSession()
+    if (!session || !session.user) {
+        return { error: '未授权访问' }
+    }
+
+    const rawData = {
+        name: formData.get('name'),
+        description: formData.get('description'),
+    }
+
+    const validation = updateProjectSchema.safeParse(rawData);
+
+    if (!validation.success) {
+        return { error: validation.error.flatten().fieldErrors.name?.[0] || '输入无效' }
+    }
+
+    const { name, description } = validation.data;
+
+    try {
+        await prisma.project.update({
+            where: {
+                id: projectId,
+                userId: session.user.id // Ensure ownership
+            },
+            data: {
+                name,
+                description: description || ''
+            }
+        })
+        revalidatePath('/dashboard')
+        revalidatePath(`/project/${projectId}`)
+        return { success: true }
+    } catch (error: any) {
+        console.error('Failed to update project:', error)
+        return { error: '更新失败' }
     }
 }

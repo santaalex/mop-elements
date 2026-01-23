@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react';
-import { Node } from '@xyflow/react';
-import { X, Save, Database, ArrowUpDown, Search, FileText, BarChart3, ExternalLink } from 'lucide-react';
+import { Node } from 'reactflow';
+import { X, Save, Database, ArrowUpDown, Search, FileText, BarChart3, ExternalLink, Lock } from 'lucide-react';
 import { NodeKPI, SubActivity, MatrixRoleData } from '../../types/diagram';
+import { getKpiStatus, getStatusColor } from '../../lib/kpi-utils';
 
-interface ProjectDataTableProps {
+interface DiagramMatrixViewProps {
     isOpen: boolean;
     onClose: () => void;
     nodes: Node[];
@@ -12,7 +13,7 @@ interface ProjectDataTableProps {
 
 type Tab = 'kpi' | 'sop';
 
-export default function ProjectDataTable({ isOpen, onClose, nodes, setNodes }: ProjectDataTableProps) {
+export default function DiagramMatrixView({ isOpen, onClose, nodes, setNodes }: DiagramMatrixViewProps) {
     const [activeTab, setActiveTab] = useState<Tab>('kpi');
     const [searchTerm, setSearchTerm] = useState('');
 
@@ -27,6 +28,7 @@ export default function ProjectDataTable({ isOpen, onClose, nodes, setNodes }: P
                     nodeId: node.id,
                     nodeName: node.data.label,
                     kpiIndex: index,
+                    definitionId: kpi.definitionId, // Pass definitionId
                     ...kpi
                 });
             });
@@ -41,14 +43,37 @@ export default function ProjectDataTable({ isOpen, onClose, nodes, setNodes }: P
             if (node.type === 'lane' || !node.data.subActivities) return;
             (node.data.subActivities as SubActivity[]).forEach((step: SubActivity, stepIndex: number) => {
                 (step.roles || []).forEach((role: MatrixRoleData, roleIndex: number) => {
-                    list.push({
-                        nodeId: node.id,
-                        nodeName: node.data.label,
-                        stepId: step.id,
-                        stepName: step.name,
-                        roleIndex: roleIndex,
-                        stepIndex: stepIndex,
-                        ...role
+                    const kpis = (role.kpis && role.kpis.length > 0)
+                        ? role.kpis
+                        : [{ id: null, name: '', target: '', unit: '', actual: '', mingdaoId: '', direction: 'higher', warning: '', critical: '' }];
+
+                    kpis.forEach((kpi: any, kpiLocalIndex: number) => {
+                        list.push({
+                            nodeId: node.id,
+                            nodeName: node.data.label,
+                            stepId: step.id,
+                            stepName: step.name,
+
+                            roleIndex,
+                            stepIndex,
+                            kpiIndexInRole: (role.kpis && role.kpis.length > 0) ? kpiLocalIndex : -1,
+
+                            roleName: role.roleName,
+                            sopContent: role.sopContent,
+                            processStandard: role.processStandard || role.standard || '', // Fallback
+                            qualityStandard: role.qualityStandard || '',
+
+                            // KPI Data
+                            kpiId: kpi.id,
+                            piName: kpi.name || '',
+                            target: kpi.target || '',
+                            unit: kpi.unit || '',
+                            actual: kpi.actual || '',
+                            mingdaoId: kpi.mingdaoId || '',
+                            direction: kpi.direction || 'higher',
+                            warning: kpi.warning || '',
+                            critical: kpi.critical || ''
+                        });
                     });
                 });
             });
@@ -68,18 +93,66 @@ export default function ProjectDataTable({ isOpen, onClose, nodes, setNodes }: P
         );
     };
 
-    const updateMatrix = (nodeId: string, stepIndex: number, roleIndex: number, field: keyof MatrixRoleData | 'stepName', value: string) => {
+    const updateMatrix = (
+        nodeId: string,
+        stepIndex: number,
+        roleIndex: number,
+        kpiIndexInRole: number,
+        field: keyof MatrixRoleData | 'stepName' | 'piName' | 'target' | 'actual' | 'unit' | 'mingdaoId' | 'direction' | 'warning' | 'critical',
+        value: string
+    ) => {
         setNodes((nds) =>
             nds.map(node => {
                 if (node.id !== nodeId) return node;
                 const steps = [...((node.data.subActivities as SubActivity[]) || [])];
+                const step = { ...steps[stepIndex] };
 
                 if (field === 'stepName') {
-                    steps[stepIndex] = { ...steps[stepIndex], name: value };
+                    step.name = value;
+                    steps[stepIndex] = step;
                 } else {
-                    const roles = [...steps[stepIndex].roles];
-                    roles[roleIndex] = { ...roles[roleIndex], [field]: value };
-                    steps[stepIndex] = { ...steps[stepIndex], roles };
+                    const roles = [...step.roles];
+                    const role = { ...roles[roleIndex] };
+
+                    // Check if field is Role-level or KPI-level
+                    if (['roleName', 'sopContent', 'processStandard', 'qualityStandard'].includes(field)) {
+                        (role as any)[field] = value;
+                    } else {
+                        // KPI Level update
+                        if (!role.kpis) role.kpis = [];
+                        let kpis = [...role.kpis];
+
+                        if (kpiIndexInRole === -1) {
+                            // Create new KPI if none existed
+                            const newId = Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+                            const newKpi: any = {
+                                id: newId,
+                                name: '',
+                                target: '',
+                                unit: '',
+                                actual: '',
+                                mingdaoId: '',
+                                direction: 'higher',
+                                warning: '',
+                                critical: ''
+                            };
+                            const targetField = field === 'piName' ? 'name' : field;
+                            newKpi[targetField] = value;
+
+                            kpis.push(newKpi);
+                        } else {
+                            // Update existing
+                            const kpi = { ...kpis[kpiIndexInRole] };
+                            const targetField = field === 'piName' ? 'name' : field;
+                            (kpi as any)[targetField] = value;
+                            kpis[kpiIndexInRole] = kpi;
+                        }
+                        role.kpis = kpis;
+                    }
+
+                    roles[roleIndex] = role;
+                    step.roles = roles;
+                    steps[stepIndex] = step;
                 }
 
                 return { ...node, data: { ...node.data, subActivities: steps } };
@@ -88,41 +161,7 @@ export default function ProjectDataTable({ isOpen, onClose, nodes, setNodes }: P
     };
 
     // --- Status Logic (Renamed to prevent conflict if exported) ---
-    const getKpiStatus = (actual?: string, target?: string, direction: 'higher' | 'lower' = 'higher', warning?: string, critical?: string) => {
-        if (!actual || !target) return 'neutral';
-        const a = parseFloat(actual);
-        const t = parseFloat(target);
-        if (isNaN(a) || isNaN(t)) return 'neutral';
-
-        // Resolve thresholds
-        let w = warning ? parseFloat(warning) : NaN;
-        let c = critical ? parseFloat(critical) : NaN;
-
-        if (direction === 'higher') {
-            if (isNaN(w)) w = t * 0.9;
-            if (isNaN(c)) c = t * 0.8;
-
-            if (a <= c) return 'red';
-            if (a < w) return 'yellow';
-            return 'green';
-        } else {
-            if (isNaN(w)) w = t * 1.1;
-            if (isNaN(c)) c = t * 1.2;
-
-            if (a >= c) return 'red';
-            if (a > w) return 'yellow';
-            return 'green';
-        }
-    };
-
-    const getStatusColor = (status: string) => {
-        switch (status) {
-            case 'green': return 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 ring-1 ring-emerald-200 dark:ring-emerald-800';
-            case 'yellow': return 'text-amber-600 bg-amber-50 dark:bg-amber-900/20 ring-1 ring-amber-200 dark:ring-amber-800';
-            case 'red': return 'text-rose-600 bg-rose-50 dark:bg-rose-900/20 ring-1 ring-rose-200 dark:ring-rose-800';
-            default: return 'text-slate-600 bg-slate-100 dark:bg-slate-800';
-        }
-    };
+    // Moved to lib/kpi-utils.ts
 
     if (!isOpen) return null;
 
@@ -199,10 +238,14 @@ export default function ProjectDataTable({ isOpen, onClose, nodes, setNodes }: P
                                     <th className="py-2 px-4 text-[11px] font-semibold text-slate-500 border-b dark:border-zinc-800 w-40">子活动 (Step)</th>
                                     <th className="py-2 px-4 text-[11px] font-semibold text-slate-500 border-b dark:border-zinc-800 w-32">岗位 (Role)</th>
                                     <th className="py-2 px-4 text-[11px] font-semibold text-slate-500 border-b dark:border-zinc-800">SOP 内容 (Content)</th>
-                                    <th className="py-2 px-4 text-[11px] font-semibold text-slate-500 border-b dark:border-zinc-800">质量标准 (Standard)</th>
+                                    <th className="py-2 px-4 text-[11px] font-semibold text-slate-500 border-b dark:border-zinc-800">工艺标准 (Process)</th>
+                                    <th className="py-2 px-4 text-[11px] font-semibold text-slate-500 border-b dark:border-zinc-800">质量标准 (Quality)</th>
                                     <th className="py-2 px-4 text-[11px] font-semibold text-slate-500 border-b dark:border-zinc-800 w-32">考核指标 (PI Name)</th>
+                                    <th className="py-2 px-4 text-[11px] font-semibold text-slate-500 border-b dark:border-zinc-800 w-20 text-center">方向</th>
                                     <th className="py-2 px-4 text-[11px] font-semibold text-slate-500 border-b dark:border-zinc-800 w-24 text-right">Target</th>
                                     <th className="py-2 px-4 text-[11px] font-semibold text-slate-500 border-b dark:border-zinc-800 w-24 text-right bg-indigo-50/20 dark:bg-indigo-900/10">Actual</th>
+                                    <th className="py-2 px-4 text-[11px] font-semibold text-slate-500 border-b dark:border-zinc-800 w-24 text-right text-amber-600">预警线</th>
+                                    <th className="py-2 px-4 text-[11px] font-semibold text-slate-500 border-b dark:border-zinc-800 w-24 text-right text-rose-600">不合格线</th>
                                     <th className="py-2 px-4 text-[11px] font-semibold text-slate-500 border-b dark:border-zinc-800 w-16 text-center">Unit</th>
                                     <th className="py-2 px-4 text-[11px] font-semibold text-slate-400 border-b dark:border-zinc-800 w-32">Mingdao ID</th>
                                 </>
@@ -215,15 +258,25 @@ export default function ProjectDataTable({ isOpen, onClose, nodes, setNodes }: P
                                 const status = getKpiStatus(row.actual, row.target, row.direction, row.warning, row.critical);
                                 return (
                                     <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-zinc-900/50 group">
+                                        {/* ... Existing KPI Row (unchanged) ... */}
                                         <td className="py-2 px-4 font-medium text-slate-700 dark:text-slate-300 sticky left-0 bg-white dark:bg-zinc-950 group-hover:bg-slate-50 dark:group-hover:bg-zinc-900/50 border-r border-slate-100 dark:border-zinc-800 z-10">
                                             {row.nodeName}
                                         </td>
-                                        <td className="py-2 px-4">
-                                            <input
-                                                className="w-full bg-transparent border-none p-0 text-xs focus:ring-0"
-                                                value={row.name}
-                                                onChange={(e) => updateKPI(row.nodeId, row.kpiIndex, 'name', e.target.value)}
-                                            />
+                                        <td className="py-2 px-4 group/cell relative">
+                                            {row.definitionId ? (
+                                                <div className="flex items-center gap-1.5 text-slate-500 cursor-not-allowed" title="Inherited from Resource Library">
+                                                    <span className="truncate">{row.name}</span>
+                                                    <div className="w-4 h-4 rounded bg-slate-100 dark:bg-zinc-800 flex items-center justify-center">
+                                                        <Lock size={10} className="w-2.5 h-2.5 opacity-50" />
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <input
+                                                    className="w-full bg-transparent border-none p-0 text-xs focus:ring-0"
+                                                    value={row.name}
+                                                    onChange={(e) => updateKPI(row.nodeId, row.kpiIndex, 'name', e.target.value)}
+                                                />
+                                            )}
                                         </td>
                                         <td className="py-2 px-4 text-center">
                                             <button
@@ -265,19 +318,15 @@ export default function ProjectDataTable({ isOpen, onClose, nodes, setNodes }: P
                                             />
                                         </td>
                                         <td className="py-2 px-4 text-center text-slate-500">
-                                            <input
-                                                className="w-full bg-transparent border-none p-0 text-xs focus:ring-0 text-center"
-                                                value={row.unit}
-                                                onChange={(e) => updateKPI(row.nodeId, row.kpiIndex, 'unit', e.target.value)}
-                                            />
-                                        </td>
-                                        <td className="py-2 px-4">
-                                            <input
-                                                className="w-full bg-transparent border-none p-0 text-[10px] font-mono text-slate-400 focus:ring-0"
-                                                value={row.mingdaoId || ''}
-                                                placeholder="UUID..."
-                                                onChange={(e) => updateKPI(row.nodeId, row.kpiIndex, 'mingdaoId', e.target.value)}
-                                            />
+                                            {row.definitionId ? (
+                                                <span className="text-slate-400 cursor-not-allowed" title="Inherited">{row.unit}</span>
+                                            ) : (
+                                                <input
+                                                    className="w-full bg-transparent border-none p-0 text-xs focus:ring-0 text-center"
+                                                    value={row.unit}
+                                                    onChange={(e) => updateKPI(row.nodeId, row.kpiIndex, 'unit', e.target.value)}
+                                                />
+                                            )}
                                         </td>
                                     </tr>
                                 );
@@ -291,9 +340,7 @@ export default function ProjectDataTable({ isOpen, onClose, nodes, setNodes }: P
                                 </tr>
                             ) : (
                                 flattenSOPs.filter(r => r.sopContent?.includes(searchTerm) || r.roleName?.includes(searchTerm) || r.nodeName?.includes(searchTerm)).map((row, idx) => {
-                                    // Matrix Roles don't assume R/Y/G logic as strictly yet (missing warning/critical), 
-                                    // but we can reuse status color logic if we have those fields, otherwise just neutral.
-                                    // Let's assume neutral or simple green if actual exists.
+                                    // Matrix Roles
                                     const status = row.actual ? 'green' : 'neutral';
 
                                     return (
@@ -305,60 +352,93 @@ export default function ProjectDataTable({ isOpen, onClose, nodes, setNodes }: P
                                                 <input
                                                     className="w-full bg-transparent border-none p-0 text-xs focus:ring-0"
                                                     value={row.stepName}
-                                                    onChange={(e) => updateMatrix(row.nodeId, row.stepIndex, row.roleIndex, 'stepName', e.target.value)}
+                                                    onChange={(e) => updateMatrix(row.nodeId, row.stepIndex, row.roleIndex, row.kpiIndexInRole, 'stepName', e.target.value)}
                                                 />
                                             </td>
                                             <td className="py-2 px-4 text-indigo-600 dark:text-indigo-400">
                                                 <input
                                                     className="w-full bg-transparent border-none p-0 text-xs focus:ring-0 font-medium text-indigo-600"
                                                     value={row.roleName}
-                                                    onChange={(e) => updateMatrix(row.nodeId, row.stepIndex, row.roleIndex, 'roleName', e.target.value)}
+                                                    onChange={(e) => updateMatrix(row.nodeId, row.stepIndex, row.roleIndex, row.kpiIndexInRole, 'roleName', e.target.value)}
                                                 />
                                             </td>
                                             <td className="py-2 px-4">
                                                 <textarea
                                                     className="w-full bg-transparent border-none p-0 text-xs focus:ring-0 resize-none h-6 overflow-hidden focus:h-20 focus:absolute focus:z-50 focus:bg-white focus:shadow-lg focus:p-2"
                                                     value={row.sopContent}
-                                                    onChange={(e) => updateMatrix(row.nodeId, row.stepIndex, row.roleIndex, 'sopContent', e.target.value)}
+                                                    onChange={(e) => updateMatrix(row.nodeId, row.stepIndex, row.roleIndex, row.kpiIndexInRole, 'sopContent', e.target.value)}
                                                 />
                                             </td>
                                             <td className="py-2 px-4">
                                                 <textarea
                                                     className="w-full bg-transparent border-none p-0 text-xs focus:ring-0 resize-none h-6 overflow-hidden"
-                                                    value={row.standard}
-                                                    onChange={(e) => updateMatrix(row.nodeId, row.stepIndex, row.roleIndex, 'standard', e.target.value)}
+                                                    value={row.processStandard}
+                                                    onChange={(e) => updateMatrix(row.nodeId, row.stepIndex, row.roleIndex, row.kpiIndexInRole, 'processStandard', e.target.value)}
+                                                />
+                                            </td>
+                                            <td className="py-2 px-4">
+                                                <textarea
+                                                    className="w-full bg-transparent border-none p-0 text-xs focus:ring-0 resize-none h-6 overflow-hidden"
+                                                    value={row.qualityStandard}
+                                                    onChange={(e) => updateMatrix(row.nodeId, row.stepIndex, row.roleIndex, row.kpiIndexInRole, 'qualityStandard', e.target.value)}
                                                 />
                                             </td>
                                             <td className="py-2 px-4">
                                                 <input
                                                     className="w-full bg-transparent border-none p-0 text-xs focus:ring-0"
                                                     value={row.piName}
-                                                    onChange={(e) => updateMatrix(row.nodeId, row.stepIndex, row.roleIndex, 'piName', e.target.value)}
+                                                    onChange={(e) => updateMatrix(row.nodeId, row.stepIndex, row.roleIndex, row.kpiIndexInRole, 'piName', e.target.value)}
                                                 />
+                                            </td>
+
+                                            <td className="py-2 px-4 text-center">
+                                                <button
+                                                    onClick={() => updateMatrix(row.nodeId, row.stepIndex, row.roleIndex, row.kpiIndexInRole, 'direction', row.direction === 'lower' ? 'higher' : 'lower')}
+                                                    className={`text-[10px] px-1.5 py-0.5 rounded border ${row.direction === 'lower' ? 'border-orange-200 text-orange-600 bg-orange-50' : 'border-blue-200 text-blue-600 bg-blue-50'}`}
+                                                >
+                                                    {row.direction === 'lower' ? '📉 越低' : '📈 越高'}
+                                                </button>
                                             </td>
 
                                             <td className="py-2 px-4 text-right font-mono">
                                                 <input
                                                     className="w-full bg-transparent border-none p-0 text-xs focus:ring-0 text-right"
                                                     value={row.target}
-                                                    onChange={(e) => updateMatrix(row.nodeId, row.stepIndex, row.roleIndex, 'target', e.target.value)}
+                                                    onChange={(e) => updateMatrix(row.nodeId, row.stepIndex, row.roleIndex, row.kpiIndexInRole, 'target', e.target.value)}
                                                 />
                                             </td>
                                             <td className="py-2 px-4 text-right font-mono bg-indigo-50/20 dark:bg-indigo-900/10">
-                                                <div className={`flex items-center justify-end px-2 py-0.5 rounded font-bold transition-all ${getStatusColor(status)}`}>
+                                                <div className={`flex items-center justify-end px-2 py-0.5 rounded font-bold transition-all ${getStatusColor(getKpiStatus(row.actual, row.target, row.direction, row.warning, row.critical))}`}>
                                                     <input
                                                         className="w-full bg-transparent border-none p-0 text-xs focus:ring-0 text-right font-inherit text-inherit"
                                                         value={row.actual || ''}
                                                         placeholder="-"
-                                                        onChange={(e) => updateMatrix(row.nodeId, row.stepIndex, row.roleIndex, 'actual', e.target.value)}
+                                                        onChange={(e) => updateMatrix(row.nodeId, row.stepIndex, row.roleIndex, row.kpiIndexInRole, 'actual', e.target.value)}
                                                     />
                                                 </div>
+                                            </td>
+
+                                            <td className="py-2 px-4 text-right border-l border-slate-100 dark:border-zinc-800 border-dashed text-amber-600">
+                                                <input
+                                                    className="w-full bg-transparent border-none p-0 text-xs focus:ring-0 text-right text-inherit font-medium placeholder-slate-300"
+                                                    value={row.warning || ''}
+                                                    placeholder="-"
+                                                    onChange={(e) => updateMatrix(row.nodeId, row.stepIndex, row.roleIndex, row.kpiIndexInRole, 'warning', e.target.value)}
+                                                />
+                                            </td>
+                                            <td className="py-2 px-4 text-right border-l border-slate-100 dark:border-zinc-800 border-dashed text-rose-600">
+                                                <input
+                                                    className="w-full bg-transparent border-none p-0 text-xs focus:ring-0 text-right text-inherit font-medium placeholder-slate-300"
+                                                    value={row.critical || ''}
+                                                    placeholder="-"
+                                                    onChange={(e) => updateMatrix(row.nodeId, row.stepIndex, row.roleIndex, row.kpiIndexInRole, 'critical', e.target.value)}
+                                                />
                                             </td>
                                             <td className="py-2 px-4 text-center text-slate-500">
                                                 <input
                                                     className="w-full bg-transparent border-none p-0 text-xs focus:ring-0 text-center"
                                                     value={row.unit}
-                                                    onChange={(e) => updateMatrix(row.nodeId, row.stepIndex, row.roleIndex, 'unit', e.target.value)}
+                                                    onChange={(e) => updateMatrix(row.nodeId, row.stepIndex, row.roleIndex, row.kpiIndexInRole, 'unit', e.target.value)}
                                                 />
                                             </td>
                                             <td className="py-2 px-4">
@@ -366,7 +446,7 @@ export default function ProjectDataTable({ isOpen, onClose, nodes, setNodes }: P
                                                     className="w-full bg-transparent border-none p-0 text-[10px] font-mono text-slate-400 focus:ring-0"
                                                     value={row.mingdaoId || ''}
                                                     placeholder="UUID..."
-                                                    onChange={(e) => updateMatrix(row.nodeId, row.stepIndex, row.roleIndex, 'mingdaoId', e.target.value)}
+                                                    onChange={(e) => updateMatrix(row.nodeId, row.stepIndex, row.roleIndex, row.kpiIndexInRole, 'mingdaoId', e.target.value)}
                                                 />
                                             </td>
                                         </tr>

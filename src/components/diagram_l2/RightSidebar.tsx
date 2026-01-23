@@ -1,7 +1,11 @@
 import { useState } from 'react';
-import { Node } from '@xyflow/react';
-import { Settings2, BarChart3, Lock, ExternalLink, Plus, X, List } from 'lucide-react';
+import { Node } from 'reactflow';
+import { Settings2, BarChart3, Lock, ExternalLink, Plus, X, List, Copy, Unlink, Link2 } from 'lucide-react';
 import { SubActivity, MatrixRoleData } from '../../types/diagram';
+import { CreativeRoleSelect } from '@/components/resources/CreativeRoleSelect';
+import { CreativeKPISelect } from '@/components/resources/CreativeKPISelect';
+import { UnitSelect } from '@/components/resources/UnitSelect';
+import { useResourceStore } from '@/lib/store/resource-store';
 
 interface RightSidebarProps {
     selectedNodeId: string | null;
@@ -20,9 +24,11 @@ export default function RightSidebar({ selectedNodeId, nodes, setNodes, isReadOn
     // --- Helper to update node data ---
     const updateNodeData = (newData: any) => {
         if (isReadOnly) return;
+        console.log('[RightSidebar] updateNodeData triggering for:', selectedNode.id, newData);
         setNodes((nds) =>
             nds.map((n) => {
                 if (n.id === selectedNode.id) {
+                    console.log('[RightSidebar] Matched node, updating data');
                     return { ...n, data: { ...n.data, ...newData } };
                 }
                 return n;
@@ -36,9 +42,10 @@ export default function RightSidebar({ selectedNodeId, nodes, setNodes, isReadOn
         const kpis = (selectedNode.data.kpis as any[]) || [];
         const newKpi = {
             id: Date.now().toString(),
-            name: '新指标',
+            definitionId: '',
+            name: '',
             target: '100',
-            unit: '%',
+            unit: '个',
         };
         updateNodeData({ kpis: [...kpis, newKpi] });
     };
@@ -68,21 +75,23 @@ export default function RightSidebar({ selectedNodeId, nodes, setNodes, isReadOn
                 </div>
                 <div className="flex-1 overflow-y-auto p-4 space-y-6">
                     <div className="space-y-2">
-                        <label htmlFor="swimlane-name-sidebar" className="text-xs font-semibold text-slate-500 uppercase tracking-wider">泳道名称</label>
-                        <input
-                            type="text"
-                            name="swimlane-name-sidebar"
-                            id="swimlane-name-sidebar"
-                            autoComplete="off"
-                            value={selectedNode.data.label as string || ''}
-                            onChange={(e) => updateNodeData({ label: e.target.value })}
+                        <label htmlFor="swimlane-role-sidebar" className="text-xs font-semibold text-slate-500 uppercase tracking-wider">分配角色 (Role)</label>
+                        <CreativeRoleSelect
+                            value={selectedNode.data.roleId}
+                            onChange={(newRoleId) => {
+                                console.log('[RightSidebar] Received newRoleId:', newRoleId, 'isReadOnly:', isReadOnly);
+                                // Find role name to update label for display
+                                const roleName = useResourceStore.getState().getRoleById(newRoleId)?.name || '';
+                                console.log('[RightSidebar] Resolved roleName:', roleName);
+                                updateNodeData({ roleId: newRoleId, label: roleName });
+                            }}
                             disabled={isReadOnly}
-                            className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
-                            placeholder="输入泳道名称"
                         />
                     </div>
                     <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-lg text-xs leading-relaxed">
-                        提示：泳道通常代表一个部门、角色或职能领域。您也可以在画布左侧双击泳道标题进行修改。
+                        提示：泳道代表角色或部门。您可以直接搜索现有角色，或输入新名称创建新角色。
+                        <br />
+                        (Tip: Lanes represent roles. Search existing roles or type to create a new one.)
                     </div>
                 </div>
             </div>
@@ -116,6 +125,25 @@ export default function RightSidebar({ selectedNodeId, nodes, setNodes, isReadOn
                         onChange={(e) => updateNodeData({ label: e.target.value })}
                         className={`text-right bg-transparent border-none text-xs font-medium focus:ring-0 w-32 ${isReadOnly ? 'text-slate-600 cursor-default' : 'text-slate-500 hover:text-indigo-600'}`}
                     />
+                </div>
+
+                {/* Node ID Display (for Developer/Simulation) */}
+                <div className="px-4 py-2 bg-slate-50/50 dark:bg-zinc-800/30 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between group">
+                    <span className="text-[10px] uppercase font-bold text-slate-400">Node ID</span>
+                    <div className="flex items-center gap-2">
+                        <code className="text-[10px] text-slate-500 font-mono bg-slate-100 dark:bg-zinc-900 px-1.5 py-0.5 rounded border border-slate-200 dark:border-zinc-700 select-all">
+                            {selectedNode.id}
+                        </code>
+                        <button
+                            onClick={() => {
+                                navigator.clipboard.writeText(selectedNode.id);
+                            }}
+                            className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-white dark:hover:bg-zinc-700 rounded transition-colors"
+                            title="复制 ID (Copy ID)"
+                        >
+                            <Copy className="w-3 h-3" />
+                        </button>
+                    </div>
                 </div>
 
                 {/* Tabs */}
@@ -220,14 +248,80 @@ export default function RightSidebar({ selectedNodeId, nodes, setNodes, isReadOn
                                                     </button>
                                                 )}
                                                 <div className="space-y-3">
-                                                    <input
-                                                        type="text"
-                                                        value={kpi.name}
-                                                        disabled={isReadOnly}
-                                                        onChange={(e) => updateKpi(index, 'name', e.target.value)}
-                                                        className={`w-[90%] bg-transparent text-sm font-bold border-none p-0 focus:ring-0 placeholder-slate-300 ${isReadOnly ? 'cursor-default text-slate-800 dark:text-slate-100' : 'text-slate-700 dark:text-slate-200'}`}
-                                                        placeholder="指标名称..."
-                                                    />
+                                                    {/* KPI Definition Select */}
+                                                    {/* KPI Name / Definition Control */}
+                                                    <div className="w-full">
+                                                        {kpi.definitionId !== undefined ? (
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="flex-1">
+                                                                    <CreativeKPISelect
+                                                                        value={kpi.definitionId}
+                                                                        disabled={isReadOnly}
+                                                                        onChange={(defId) => {
+                                                                            const def = useResourceStore.getState().getKpiDefinitionById(defId);
+                                                                            if (def) {
+                                                                                const updatedKpis = [...((selectedNode.data.kpis as any[]) || [])];
+                                                                                updatedKpis[index] = {
+                                                                                    ...updatedKpis[index],
+                                                                                    definitionId: defId,
+                                                                                    name: def.name,
+                                                                                    unit: def.unit,
+                                                                                };
+                                                                                updateNodeData({ kpis: updatedKpis });
+                                                                            }
+                                                                        }}
+                                                                    />
+                                                                </div>
+                                                                {!isReadOnly && (
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            // Detach: Keep current name/unit but remove definitionId (set to undefined)
+                                                                            const updatedKpis = [...((selectedNode.data.kpis as any[]) || [])];
+                                                                            updatedKpis[index] = { ...updatedKpis[index], definitionId: undefined };
+                                                                            updateNodeData({ kpis: updatedKpis });
+                                                                        }}
+                                                                        className="p-1.5 text-slate-400 hover:text-orange-500 hover:bg-orange-50 rounded transition-colors"
+                                                                        title="Detach from Global Definition (Unlock Name)"
+                                                                    >
+                                                                        <Unlink className="w-4 h-4" />
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        ) : (
+                                                            <div className="flex items-center gap-2">
+                                                                <input
+                                                                    type="text"
+                                                                    value={kpi.name}
+                                                                    disabled={isReadOnly}
+                                                                    onChange={(e) => updateKpi(index, 'name', e.target.value)}
+                                                                    placeholder="KPI Name"
+                                                                    className={`flex-1 min-w-0 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-md px-3 py-1.5 text-xs font-medium focus:ring-1 focus:ring-indigo-500 ${isReadOnly ? 'cursor-default text-slate-600' : 'text-slate-700 dark:text-slate-200'}`}
+                                                                />
+                                                                {!isReadOnly && (
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            // Link: Switch to Global Mode (set to empty string to show Selector)
+                                                                            const updatedKpis = [...((selectedNode.data.kpis as any[]) || [])];
+                                                                            // Check if exact name match exists in global definitions
+                                                                            const match = useResourceStore.getState().kpiDefinitions.find(d => d.name === kpi.name);
+                                                                            if (match) {
+                                                                                updatedKpis[index] = { ...updatedKpis[index], definitionId: match.id, unit: match.unit };
+                                                                            } else {
+                                                                                // No match, just enable Selector mode
+                                                                                updatedKpis[index] = { ...updatedKpis[index], definitionId: '' };
+                                                                            }
+                                                                            updateNodeData({ kpis: updatedKpis });
+                                                                        }}
+                                                                        className="p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 rounded transition-colors"
+                                                                        title="Link to Global Definition"
+                                                                    >
+                                                                        <Link2 className="w-4 h-4" />
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+
                                                     <div className="grid grid-cols-5 gap-2">
                                                         {/* Target */}
                                                         <div className="col-span-2 flex items-center gap-1 bg-white/50 dark:bg-zinc-900/50 px-2 py-1.5 rounded-lg border border-slate-100 dark:border-zinc-800">
@@ -253,14 +347,12 @@ export default function RightSidebar({ selectedNodeId, nodes, setNodes, isReadOn
                                                             />
                                                         </div>
                                                         {/* Unit */}
-                                                        <div className="col-span-1 flex items-center justify-center bg-white/50 dark:bg-zinc-900/50 px-1 py-1.5 rounded-lg border border-slate-100 dark:border-zinc-800">
-                                                            <input
-                                                                type="text"
+                                                        {/* Unit */}
+                                                        <div className="col-span-1 flex items-center justify-center bg-white/50 dark:bg-zinc-900/50 rounded-lg border border-slate-100 dark:border-zinc-800">
+                                                            <UnitSelect
                                                                 value={kpi.unit}
                                                                 disabled={isReadOnly}
-                                                                onChange={(e) => updateKpi(index, 'unit', e.target.value)}
-                                                                className={`w-full text-center bg-transparent text-xs border-none p-0 focus:ring-0 ${isReadOnly ? 'cursor-default text-slate-500' : 'text-slate-400'}`}
-                                                                title="单位"
+                                                                onChange={(val) => updateKpi(index, 'unit', val)}
                                                             />
                                                         </div>
                                                     </div>

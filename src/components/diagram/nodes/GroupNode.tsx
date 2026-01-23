@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Handle, Position, NodeProps, NodeResizer } from '@xyflow/react';
+import { Handle, Position, NodeProps, NodeResizer } from 'reactflow';
 import { GripVertical } from 'lucide-react';
 
 // Map abstract color names to premium Tailwind gradient classes
@@ -41,7 +41,7 @@ const colorSchemes: Record<string, { sidebar: string, content: string, border: s
     },
 };
 
-const GroupNode = ({ id, data, selected, width, height }: NodeProps) => {
+const GroupNode = ({ id, data, selected, width, height }: NodeProps & { width?: number; height?: number }) => {
     const theme = colorSchemes[data.color as string] || colorSchemes.slate;
 
     // Call shared resize handler if available

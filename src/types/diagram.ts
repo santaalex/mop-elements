@@ -8,9 +8,23 @@ export interface NodeKPI {
     critical?: string;   // Red threshold
     direction?: 'higher' | 'lower';
     mingdaoId?: string;  // Data Source ID
+    definitionId?: string; // Reference to Global Resource ID
 }
 
 // --- Activity Matrix Types (New) ---
+
+export interface MatrixKPI {
+    id: string;
+    name: string;
+    target: string;
+    unit: string;
+    actual?: string;
+    mingdaoId?: string;
+    // Status Logic
+    direction?: 'higher' | 'lower';
+    warning?: string;
+    critical?: string;
+}
 
 export interface MatrixRoleData {
     roleId: string;       // e.g. "technician"
@@ -19,20 +33,23 @@ export interface MatrixRoleData {
     // The "What & How"
     sopContent: string;   // Tasks & SOP Instructions
 
-    // The "Standard" (New requirement)
-    standard: string;     // Craftsmanship Standards & Quality Points
+    // The "Standard" (Split)
+    processStandard: string; // 工艺标准
+    qualityStandard: string; // 质量标准
 
-    // The "Measure" (KPI)
-    piName: string;       // KPI Name
-    target: string;       // Target Value
-    unit: string;
-    actual?: string;      // Live Data from Mingdao
+    // The "Measure" (Multiple KPIs)
+    kpis: MatrixKPI[];
 
-    // Thresholds
+    // Legacy fields (Deprecated - kept for transitional compatibility)
+    standard?: string;
+    piName?: string;
+    target?: string;
+    unit?: string;
+    actual?: string;
+    mingdaoId?: string;
     warning?: string;
     critical?: string;
     direction?: 'higher' | 'lower';
-    mingdaoId?: string;   // For Sync link
 }
 
 // The "Row" in the Matrix: A Sub-activity (Step)

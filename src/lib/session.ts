@@ -3,12 +3,14 @@ import { SignJWT, jwtVerify } from 'jose'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
-const key = new TextEncoder().encode(process.env.JWT_SECRET || 'default_secret_please_change_in_prod')
+const secretKey = process.env.JWT_SECRET;
+const key = new TextEncoder().encode(secretKey || 'default_secret_please_change_in_prod');
 
 export type SessionPayload = {
     userId: string
     name?: string
     role?: string
+    email?: string // Added to match usage
     expiresAt: Date
 }
 
@@ -31,14 +33,21 @@ export async function decrypt(session: string | undefined = '') {
     }
 }
 
-export async function createSession(userId: string, name: string, role: string = 'USER') { // Changed
+export async function createSession(userId: string, name: string, role: string = 'USER') {
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-    const session = await encrypt({ userId, name, role, expiresAt }) // Changed
+    // payload should match SessionPayload/User structure
+    const session = await encrypt({ userId, name, role, expiresAt })
 
     const cookieStore = await cookies()
+
+    // Configurable Secure flag. 
+    // Default to false if COOKIE_SECURE is not explicitly 'true', 
+    // to support IP-based (HTTP) deployments as requested by user.
+    const isSecure = process.env.COOKIE_SECURE === 'true';
+
     cookieStore.set('session', session, {
         httpOnly: true,
-        secure: false, // Changed: Disable SSL requirement for IP-based deployment
+        secure: isSecure,
         expires: expiresAt,
         sameSite: 'lax',
         path: '/',
