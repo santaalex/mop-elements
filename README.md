@@ -29,15 +29,34 @@ Industrial swimlane with premium glassmorphism.
     - `lane-drop`: Dispatched when an object is dropped inside.
 
 ### 2. NodeComponent.js (`<mop-node>`)
-High-precision business process node.
+High-precision business process node (L1 & L2).
 - **CDN**: `https://cdn.jsdelivr.net/gh/santaalex/mop-elements@main/NodeComponent.js`
+- **Visuals**: 
+    - **L1**: Process node with drill-down `+` icon.
+    - **L2**: 
+        - `start` (Thin circle)
+        - `end` (Thick 4px black stamp)
+        - `activity` (Rounded rect)
+        - `gateway` (Diamond with XOR/AND/OR icons)
 - **Attributes**:
+    - `type`: `process`, `start`, `end`, `activity`, `xor`, `and`, `or`.
     - `label`: Main text.
-    - `kpi`: Monitoring value (e.g., `98%`, `12h`).
+    - `kpi`: Monitoring value (e.g., `98%`).
     - `status`: `normal` (green), `warning` (yellow), `critical` (red).
-    - `color`: Accent color.
-    - `type`: `activity`, `gateway`, `event`.
-- **Interactions**: Built-in breathing status bulb and glass hover effects.
+- **Interface**:
+    - `node.getAnchors()`: Returns physical coordinates of Top, Bottom, Left, Right centers.
+
+---
+
+## 🔗 Connection Strategy (Hybrid Snapping)
+To achieve professional industrial routing:
+
+### 1. Default Mode (Automated)
+- **Manhattan Routing**: Use `node.getAnchors()` to snap line endpoints to the **exact center** of the node's 4 sides.
+- **Stub (Protection)**: Lines must travel **20px straight** out of the anchor before turning.
+
+### 2. Manual Mode (Flexible)
+- **Edge Projection**: If the user drags a line, calculate the **closest point** on the node's geometric boundary (Top/Bottom/Left/Right edge) and snap to that specific pixel, allowing for off-center connections.
 
 ---
 
