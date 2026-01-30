@@ -46,10 +46,24 @@ High-precision business process node (L1 & L2).
 - **Interface**:
     - `node.getAnchors()`: Returns physical coordinates of Top, Bottom, Left, Right centers.
 
+### 3. EdgeComponent.js (`<mop-edge>`)
+Atomic connector with industrial interactions.
+- **CDN**: `https://cdn.jsdelivr.net/gh/santaalex/mop-elements@main/EdgeComponent.js`
+- **Philosophy**: A "dumb" renderer. It does NOT calculate routes; it simply draws the path provided by the Shell.
+- **Attributes**:
+    - `points`: Coordinate string (e.g., `100,100 200,100`).
+    - `color`: Stroke color.
+    - `animated`: `true` for flowing dashed lines.
+    - `selected`: `true` for blue highlight & edit handles.
+    - `label`: Optional text.
+- **Interactions**:
+    - **Hit Area**: Includes a 16px transparent layer for easy clicking.
+    - **Click**: Emits standard click events for the Shell to handle (e.g., selection).
+
 ---
 
 ## 🔗 Connection Strategy (Hybrid Snapping)
-To achieve professional industrial routing:
+To achieve professional industrial routing (Shell Logic):
 
 ### 1. Default Mode (Automated)
 - **Manhattan Routing**: Use `node.getAnchors()` to snap line endpoints to the **exact center** of the node's 4 sides.
