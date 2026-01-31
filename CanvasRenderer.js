@@ -20,14 +20,22 @@ export class CanvasRenderer {
     render(graphData) {
         if (!graphData) return;
 
-        // 1. 清空画布 (TODO: 后续优化为 Diff 算法以提高性能)
+        // 1. 清空画布
         this.container.innerHTML = '';
         this.laneMap.clear();
 
-        // 2. 渲染泳道 (Containers)
+        // 2. 渲染泳道 (Containers) - 采用 Virtual Flex 堆叠逻辑
         if (Array.isArray(graphData.lanes)) {
-            graphData.lanes.forEach(laneData => {
-                this.renderLane(laneData);
+            // 首先按 order 排序，如果没有 order 则按数组顺序
+            const sortedLanes = [...graphData.lanes].sort((a, b) => (a.order || 0) - (b.order || 0));
+
+            let currentY = 100; // 顶层起始偏移
+            const gap = 10;     // 工业级标准间距
+
+            sortedLanes.forEach(laneData => {
+                this.renderLane(laneData, currentY);
+                // 自动推算下一个泳道的起点
+                currentY += (laneData.h || 200) + gap;
             });
         }
 
@@ -37,28 +45,27 @@ export class CanvasRenderer {
                 this.renderNode(nodeData);
             });
         }
-
-        // 4. 渲染连线 (Edges) - 暂时留空，等待 EdgeComponent 就绪
-        // if (Array.isArray(graphData.edges)) { ... }
     }
 
     /**
      * 渲染单个泳道
+     * @param {Object} data - 泳道数据
+     * @param {number} computedY - 由布局引擎计算出的 Y 坐标
      */
-    renderLane(data) {
+    renderLane(data, computedY) {
         const lane = document.createElement('mop-lane');
 
         // 设置属性
         lane.setAttribute('id', data.id);
         lane.setAttribute('name', data.name || '未命名泳道');
-        lane.setAttribute('width', (data.w || 1000) + 'px');
-        lane.setAttribute('height', (data.h || 200) + 'px');
+        lane.setAttribute('width', (data.w || 1200) + 'px');
+        lane.setAttribute('height', (data.h || 220) + 'px');
         lane.setAttribute('color', data.color || '#6366f1');
 
-        // 设置绝对定位
+        // 设置绝对定位 (使用计算出的 Y，忽略原始 Y)
         lane.style.position = 'absolute';
-        lane.style.top = (data.y || 0) + 'px';
-        lane.style.left = (data.x || 0) + 'px';
+        lane.style.top = computedY + 'px';
+        lane.style.left = (data.x || 100) + 'px';
 
         // 挂载
         this.container.appendChild(lane);

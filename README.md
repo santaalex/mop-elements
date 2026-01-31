@@ -19,6 +19,7 @@ The infinite canvas engine.
 The bridge between JSON data and Atomic Elements.
 - **CDN**: `https://cdn.jsdelivr.net/gh/santaalex/mop-elements@main/CanvasRenderer.js`
 - **Features**: 
+    - **Virtual Flex Stacking**: Automatically calculates Y-coordinates based on lane order and fixed 10px gaps.
     - Full-scale rendering of Lanes and Nodes from a unified JSON.
     - Automatic hierarchical nesting (Nodes inside Lanes).
     - DOM-reconciliation ready (Optimized clear-and-draw).
@@ -32,6 +33,7 @@ Industrial swimlane with premium glassmorphism.
 - **CDN**: `https://cdn.jsdelivr.net/gh/santaalex/mop-elements@main/LaneComponent.js`
 - **Attributes**:
     - `name`: Lane title.
+    - `order`: Integer for vertical stacking position (Virtual Flex).
     - `width`: Standard width (e.g., `1200px`).
     - `height`: Standard height (e.g., `240px`).
     - `color`: Primary accent color.
