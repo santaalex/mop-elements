@@ -13,6 +13,18 @@ The infinite canvas engine.
 
 ---
 
+## 🎨 Graphic Layer (The Painter)
+
+### 1. CanvasRenderer.js
+The bridge between JSON data and Atomic Elements.
+- **CDN**: `https://cdn.jsdelivr.net/gh/santaalex/mop-elements@main/CanvasRenderer.js`
+- **Features**: 
+    - Full-scale rendering of Lanes and Nodes from a unified JSON.
+    - Automatic hierarchical nesting (Nodes inside Lanes).
+    - DOM-reconciliation ready (Optimized clear-and-draw).
+
+---
+
 ## 🏗 Atom Layer (Web Components)
 
 ### 1. LaneComponent.js (`<mop-lane>`)
