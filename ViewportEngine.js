@@ -4,9 +4,14 @@
  * 隔离理由：数学矩阵逻辑严密，固化后严禁 AI 篡改。
  */
 export class ViewportEngine {
-    constructor(containerId) {
+    constructor(containerId, contentId) {
         this.container = document.getElementById(containerId);
-        this.content = this.container.querySelector('.mop-canvas-content');
+        // Prioritize ID if passed, otherwise look for standard class
+        if (contentId) {
+            this.content = document.getElementById(contentId);
+        } else {
+            this.content = this.container.querySelector('.mop-canvas-content');
+        }
         this.state = {
             scale: 1,
             x: 0,
@@ -47,11 +52,35 @@ export class ViewportEngine {
 
         // 2. 鼠标抓取平移 (Pan)
         this.container.addEventListener('mousedown', (e) => {
-            if (e.button === 0) { // 左键平移
+            // Only pan if clicking the background OR holding Space
+            const isSpacePressed = this.state.isSpacePressed;
+            if (e.button === 0 || isSpacePressed) {
                 this.state.isDragging = true;
                 this.state.lastX = e.clientX;
                 this.state.lastY = e.clientY;
                 this.container.style.cursor = 'grabbing';
+            }
+        });
+
+        // 3. 键盘空格键监听 (Space to Pan)
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' && !this.state.isSpacePressed) {
+                // Ignore if user is typing in an input
+                if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+
+                this.state.isSpacePressed = true;
+                this.container.style.cursor = 'grab';
+                // Prevent scrolling page
+                if (e.target === document.body || e.target === this.container) {
+                    e.preventDefault();
+                }
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'Space') {
+                this.state.isSpacePressed = false;
+                this.container.style.cursor = 'default';
             }
         });
 
@@ -69,7 +98,7 @@ export class ViewportEngine {
         window.addEventListener('mouseup', () => {
             if (this.state.isDragging) {
                 this.state.isDragging = false;
-                this.container.style.cursor = 'grab';
+                this.container.style.cursor = this.state.isSpacePressed ? 'grab' : 'default';
                 this.notify('change');
             }
         });

@@ -34,8 +34,9 @@ export class CanvasRenderer {
 
             sortedLanes.forEach(laneData => {
                 this.renderLane(laneData, currentY);
-                // 自动推算下一个泳道的起点
-                currentY += (laneData.h || 200) + gap;
+                // 自动推算下一个泳道的起点 (确保使用浮点数，默认 220)
+                const h = parseFloat(laneData.h) || 220;
+                currentY += h + gap;
             });
         }
 
@@ -59,7 +60,7 @@ export class CanvasRenderer {
         lane.setAttribute('id', data.id);
         lane.setAttribute('name', data.name || '未命名泳道');
         lane.setAttribute('width', (data.w || 1200) + 'px');
-        lane.setAttribute('height', (data.h || 220) + 'px');
+        lane.setAttribute('height', (parseFloat(data.h) || 220) + 'px');
         lane.setAttribute('color', data.color || '#6366f1');
 
         // 设置绝对定位 (使用计算出的 Y，忽略原始 Y)
