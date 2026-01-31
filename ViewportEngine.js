@@ -9,14 +9,22 @@ export class ViewportEngine {
         // Prioritize ID if passed, otherwise look for standard class
         if (contentId) {
             this.content = document.getElementById(contentId);
-        } else {
+        }
+
+        // Fallback or secondary check
+        if (!this.content) {
             this.content = this.container.querySelector('.mop-canvas-content');
+        }
+
+        if (!this.content) {
+            console.error('[Viewport] Content layer not found! Panning/Scaling will be disabled.');
         }
         this.state = {
             scale: 1,
             x: 0,
             y: 0,
             isDragging: false,
+            isSpacePressed: false, // 必须初始化，否则按键状态不稳
             lastX: 0,
             lastY: 0
         };
@@ -54,20 +62,17 @@ export class ViewportEngine {
         this.container.addEventListener('mousedown', (e) => {
             const isSpace = this.state.isSpacePressed;
             const isMiddleClick = e.button === 1;
-            const isRightClick = e.button === 2;
-            const isBackground = e.target === this.container || e.target.classList.contains('mop-scene');
 
-            // Only pan if: Middle Click OR (Left Click + Space) OR (Left Click on Background)
-            if (isMiddleClick || (e.button === 0 && (isSpace || isBackground))) {
+            // Only pan if: Space held, Middle Click, or Background Clicked
+            // (Note: If clicking a node, EditorView stops propagation unless Space is held)
+            if (isSpace || isMiddleClick || e.target === this.container || e.target === this.content || e.target.id === 'mop-grid') {
                 this.state.isDragging = true;
                 this.state.lastX = e.clientX;
                 this.state.lastY = e.clientY;
                 this.container.style.cursor = 'grabbing';
 
-                // If it's a drag-start for panning, stop propagation to prevent node selection
-                if (isSpace || isMiddleClick || isBackground) {
-                    // But don't stop if we are actually trying to click a node (this is handled by EditorView capturing first)
-                }
+                // If it's a middle click or space pan, prevent browser defaults
+                if (isMiddleClick || isSpace) e.preventDefault();
             }
         });
 
@@ -77,6 +82,7 @@ export class ViewportEngine {
                 // Ignore if user is typing in an input
                 if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
 
+                console.log('[Viewport] Space Pressed');
                 this.state.isSpacePressed = true;
                 this.container.style.cursor = 'grab';
                 // Prevent scrolling page
@@ -88,6 +94,7 @@ export class ViewportEngine {
 
         window.addEventListener('keyup', (e) => {
             if (e.code === 'Space') {
+                console.log('[Viewport] Space Released');
                 this.state.isSpacePressed = false;
                 this.container.style.cursor = 'default';
             }
@@ -95,10 +102,16 @@ export class ViewportEngine {
 
         window.addEventListener('mousemove', (e) => {
             if (!this.state.isDragging) return;
+
             const dx = e.clientX - this.state.lastX;
             const dy = e.clientY - this.state.lastY;
+
+            // 工业级平移：直接累加偏移量
             this.state.x += dx;
             this.state.y += dy;
+
+            console.log('[Viewport] Panning:', { dx, dy, newX: this.state.x, newY: this.state.y });
+
             this.state.lastX = e.clientX;
             this.state.lastY = e.clientY;
             this.applyTransform();
@@ -163,6 +176,7 @@ export class ViewportEngine {
     }
 
     applyTransform() {
+        if (!this.content) return;
         this.content.style.transform = `translate(${this.state.x}px, ${this.state.y}px) scale(${this.state.scale})`;
     }
 

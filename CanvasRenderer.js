@@ -26,15 +26,15 @@ export class CanvasRenderer {
 
         // 2. 渲染泳道 (Containers) - 采用 Virtual Flex 堆叠逻辑
         if (Array.isArray(graphData.lanes)) {
-            // 首先按 order 排序，如果没有 order 则按数组顺序
+            // 首先按 order 排序
             const sortedLanes = [...graphData.lanes].sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
 
             let currentY = 100; // 顶层起始偏移 (Number)
-            const gap = 10;     // 工业级标准间距 (Number)
+            const gap = 6;      // 用户要求的紧凑间距 (6px)
 
             sortedLanes.forEach(laneData => {
                 this.renderLane(laneData, currentY);
-                // 确保高度被解析为纯数字，防止字符串拼接导致 CSS 失败
+                // 确保高度被解析为纯数字，防止字符串拼接
                 const h = parseFloat(laneData.h) || 220;
                 currentY = Number(currentY) + h + gap;
             });
