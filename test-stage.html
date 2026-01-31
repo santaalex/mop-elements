@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ViewportEngine Test</title>
+    <style>
+        body {
+            margin: 0;
+            background: #f8fafc;
+            color: #1e293b;
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+        }
+
+        #app {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            cursor: grab;
+        }
+
+        .mop-canvas-content {
+            width: 2000px;
+            height: 2000px;
+            /* 浅色网格背景 */
+            background-color: #f8fafc;
+            background-image:
+                linear-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
+            background-size: 50px 50px;
+            position: absolute;
+            top: 0;
+            left: 0;
+            transform-origin: 0 0;
+        }
+
+        .test-box {
+            position: absolute;
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid #cbd5e1;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            color: #475569;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .controls {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            z-index: 100;
+            width: 280px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="controls">
+        <h3 style="margin-top:0; font-weight:700; color:#0f172a;">MoP Viewport (Light)</h3>
+        <p style="font-size:14px; margin:5px 0;">⚪️ 滚轮: 缩放 (Zoom)</p>
+        <p style="font-size:14px; margin:5px 0;">⚪️ 拖拽: 平移 (Pan)</p>
+        <hr style="opacity:0.2; margin: 15px 0;">
+        <div id="status" style="font-family: monospace; font-size: 13px;">Scale: 1.0</div>
+        <div id="world-pos" style="color: #6366f1; font-family: monospace; margin-top: 5px; font-size: 13px;">Mouse
+            World: (0, 0)</div>
+        <button id="focus-btn"
+            style="margin-top: 15px; width:100%; cursor: pointer; padding: 8px 10px; border-radius: 6px; border: none; background: #6366f1; color: white; font-weight: 500; transition: background 0.2s;">聚焦到测试节点
+            2</button>
+    </div>
+
+    <div id="app">
+        <div class="mop-canvas-content">
+            <!-- 泳道1：采购部门 (展示 L2 核心节点) -->
+            <mop-lane name="采购部门" width="1200px" height="300px" color="#3b82f6"
+                style="position:absolute; top:100px; left:100px;">
+                <!-- BPMN 事件 -->
+                <mop-node type="start" label="开始" style="top:40px; left:50px;"></mop-node>
+                <mop-node type="end" label="流程结束" style="top:40px; left:1050px;"></mop-node>
+
+                <!-- BPMN 活动 -->
+                <mop-node type="activity" label="提交采购单" kpi="98%" status="normal" color="#3b82f6"
+                    style="top:120px; left:150px;"></mop-node>
+
+                <!-- BPMN 网关族 -->
+                <mop-node type="xor" label="价格校验" style="top:120px; left:400px;"></mop-node>
+                <mop-node type="and" label="并行分发" style="top:120px; left:600px;"></mop-node>
+                <mop-node type="or" label="多路审批" style="top:120px; left:800px;"></mop-node>
+            </mop-lane>
+
+            <!-- 泳道2：展示 L1 下钻节点 -->
+            <mop-lane name="层级管理" width="1200px" height="300px" color="#10b981"
+                style="position:absolute; top:405px; left:100px;">
+                <mop-node type="process" label="XYZ子流程 (L1)" kpi="Active" status="warning" color="#10b981"
+                    style="top:100px; left:200px;"></mop-node>
+                <mop-node type="process" label="库存管理子流程" kpi="FAIL" status="critical" color="#10b981"
+                    style="top:100px; left:500px;"></mop-node>
+            </mop-lane>
+
+            <!-- 🧪 测试：一根曼哈顿连线 (Y=560 -> Y=650 已避开节点) -->
+            <mop-edge id="demo-edge" points="300,650 400,650 400,650 600,650" type="manhattan" color="#64748b"
+                animated="true" label="调拨请求" style="position:absolute; top:0; left:0; pointer-events:none;">
+            </mop-edge>
+        </div>
+    </div>
+
+    <script type="module">
+        import { ViewportEngine } from 'https://cdn.jsdelivr.net/gh/santaalex/mop-elements@main/ViewportEngine.js';
+
+        // 🏗️ 核心进化：泳道组件已完成云端隔离，现在直接通过 CDN 调用
+        import 'https://cdn.jsdelivr.net/gh/santaalex/mop-elements@main/LaneComponent.js';
+
+        // 🧪 本地开发：节点组件还在死磕中，继续使用本地引用 (加 v 参数防止缓存)
+        // import './NodeComponent.js?v=9';
+
+        // 🚀 核心进化：节点组件已定稿上云，直接调用 CDN
+        import 'https://cdn.jsdelivr.net/gh/santaalex/mop-elements@main/NodeComponent.js';
+
+        // 🧪 本地开发：连线组件 (Edge)
+        // import './EdgeComponent.js';
+
+        // 🚀 核心进化：连线组件已定稿上云，直接调用 CDN
+        import 'https://cdn.jsdelivr.net/gh/santaalex/mop-elements@main/EdgeComponent.js';
+
+        const engine = new ViewportEngine('app');
+
+        const statusEl = document.getElementById('status');
+        const worldPosEl = document.getElementById('world-pos');
+
+        // 1. 监听视角变化 (引擎层自动抛出)
+        engine.on('change', (state) => {
+            statusEl.innerText = `Scale: ${state.scale.toFixed(2)} | X: ${Math.round(state.x)} | Y: ${Math.round(state.y)}`;
+        });
+
+        // 2. 实时坐标转换演示 (Screen -> World)
+        window.addEventListener('mousemove', (e) => {
+            const world = engine.toWorld(e.clientX, e.clientY);
+            worldPosEl.innerText = `Mouse World: (${Math.round(world.x)}, ${Math.round(world.y)})`;
+        });
+
+        // 3. 编程控制演示 (CenterOn)
+        document.getElementById('focus-btn').onclick = () => {
+            // 世界坐标中的节点 2 位置
+            engine.centerOn(800 + 100, 500 + 75);
+        };
+
+        // 4. 点击事件监听 (Direct Edge Interaction)
+        // 使用 setTimeout 确保原子组件挂载完成
+        setTimeout(() => {
+            const demoEdge = document.getElementById('demo-edge');
+            if (demoEdge) {
+                // 必须在 capture 阶段或直接监听，确保能捕获到 shadow DOM 冒泡上来的事件
+                demoEdge.addEventListener('click', (e) => {
+                    console.log('Demo Edge Clicked!');
+                    const isSelected = demoEdge.getAttribute('selected') === 'true';
+                    demoEdge.setAttribute('selected', !isSelected);
+                });
+            }
+        }, 100);
+
+        engine.on('click', (data) => {
+            console.log('原子引擎捕获点击:', data);
+
+            // 演示：获取点击节点的连线锚点
+            if (data.target && data.target.tagName === 'MOP-NODE') {
+                console.log('节点连线接口 (Anchors):', data.target.getAnchors());
+            }
+        });
+
+
+        console.log('Industrial ViewportEngine Initialized');
+    </script>
+</body>
+
+</html>
