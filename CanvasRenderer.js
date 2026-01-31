@@ -27,16 +27,16 @@ export class CanvasRenderer {
         // 2. 渲染泳道 (Containers) - 采用 Virtual Flex 堆叠逻辑
         if (Array.isArray(graphData.lanes)) {
             // 首先按 order 排序，如果没有 order 则按数组顺序
-            const sortedLanes = [...graphData.lanes].sort((a, b) => (a.order || 0) - (b.order || 0));
+            const sortedLanes = [...graphData.lanes].sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
 
-            let currentY = 100; // 顶层起始偏移
-            const gap = 10;     // 工业级标准间距
+            let currentY = 100; // 顶层起始偏移 (Number)
+            const gap = 10;     // 工业级标准间距 (Number)
 
             sortedLanes.forEach(laneData => {
                 this.renderLane(laneData, currentY);
-                // 自动推算下一个泳道的起点 (确保使用浮点数，默认 220)
+                // 确保高度被解析为纯数字，防止字符串拼接导致 CSS 失败
                 const h = parseFloat(laneData.h) || 220;
-                currentY += h + gap;
+                currentY = Number(currentY) + h + gap;
             });
         }
 

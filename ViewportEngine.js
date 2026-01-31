@@ -52,13 +52,22 @@ export class ViewportEngine {
 
         // 2. 鼠标抓取平移 (Pan)
         this.container.addEventListener('mousedown', (e) => {
-            // Only pan if clicking the background OR holding Space
-            const isSpacePressed = this.state.isSpacePressed;
-            if (e.button === 0 || isSpacePressed) {
+            const isSpace = this.state.isSpacePressed;
+            const isMiddleClick = e.button === 1;
+            const isRightClick = e.button === 2;
+            const isBackground = e.target === this.container || e.target.classList.contains('mop-scene');
+
+            // Only pan if: Middle Click OR (Left Click + Space) OR (Left Click on Background)
+            if (isMiddleClick || (e.button === 0 && (isSpace || isBackground))) {
                 this.state.isDragging = true;
                 this.state.lastX = e.clientX;
                 this.state.lastY = e.clientY;
                 this.container.style.cursor = 'grabbing';
+
+                // If it's a drag-start for panning, stop propagation to prevent node selection
+                if (isSpace || isMiddleClick || isBackground) {
+                    // But don't stop if we are actually trying to click a node (this is handled by EditorView capturing first)
+                }
             }
         });
 
