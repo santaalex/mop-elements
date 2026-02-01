@@ -1,5 +1,8 @@
 import { ProjectService } from './ProjectService.js';
-import { CanvasRenderer } from 'mop-renderer';
+// CDN IMPORT: Gizmo SDK
+import { GizmoRenderer } from 'https://cdn.jsdelivr.net/gh/santaalex/mop-elements@main/packages/mop-gizmo-sdk/GizmoRenderer.js';
+import { CanvasRenderer } from './CanvasRenderer.js';
+import { InteractionManager } from './interactions/InteractionManager.js';
 // ViewportEngine is on CDN, but for consistency we can use the local file or CDN.
 // Since we didn't add it to importmap in index.html, we might need a direct import or add to map.
 // Let's assume we add it to the map or use the relative path (which is also local).
@@ -7,6 +10,19 @@ import { CanvasRenderer } from 'mop-renderer';
 // but for now local import ./ViewportEngine.js is fine (it was pushed to repo too).
 import { ViewportEngine } from 'mop-viewport';
 
+/**
+ * MoP Editor Controller (The Orchestrator)
+ * 
+ * Responsibilities:
+ * 1. Data Cycle: Loads Project -> Updates Graph Data -> Saves to API.
+ * 2. Component Assembly: Initializes Viewport, Renderer, and InteractionManager.
+ * 3. Command Handling: Toolbar actions (Add Node, Add Lane).
+ * 
+ * Architecture Note:
+ * This class DOES NOT handle low-level events (mousedown/move). 
+ * Those are delegated to `interactions/InteractionManager.js`.
+ * This class DOES NOT draw DOM. That is delegated to `CanvasRenderer.js`.
+ */
 export class EditorView {
     constructor() {
         this.projectId = null;
@@ -14,14 +30,38 @@ export class EditorView {
         this.graphData = { lanes: [], nodes: [] }; // The SSOT
         this.renderer = null;
         this.viewport = null;
-        this.dragState = null; // Professional interaction state
+        this.dragState = null;
+        this.selection = new Set(); // Selection State (Set of Node IDs)
         this.projectService = new ProjectService();
+        this.renderer = null;
+        this.gizmoRenderer = null; // Interface Painter
     }
 
     async mount(container, params) {
         console.log('[EditorView] Mounting...', params);
         this.projectId = params.id;
+        this.container = container;
         container.innerHTML = this.template();
+
+        // Setup Layers
+        // Store scene reference for coordinate calculation
+        this.scene = container.querySelector('#mop-scene');
+        const viewportRoot = container.querySelector('#mop-viewport-root'); // Grab Root
+
+        // Create Gizmo Layer (Overlay)
+        const gizmoLayer = document.createElement('div');
+        gizmoLayer.id = 'mop-gizmo-layer';
+        gizmoLayer.style.position = 'absolute';
+        gizmoLayer.style.top = '0';
+        gizmoLayer.style.left = '0';
+        gizmoLayer.style.width = '100%';
+        gizmoLayer.style.height = '100%';
+        gizmoLayer.style.pointerEvents = 'none'; // Pass through clicks to nodes
+        gizmoLayer.style.zIndex = '2000'; // Above nodes
+
+        // BUG FIX: Attach to Viewport Root, NOT Scene. 
+        // Scene gets cleared by CanvasRenderer, Root does not.
+        viewportRoot.appendChild(gizmoLayer);
 
         // 1. Init Viewport
         // We need to wait for DOM to be ready
@@ -29,7 +69,8 @@ export class EditorView {
             this.initViewport();
             await this.loadProject();
             this.setupToolbar();
-            this.setupInteractions(); // Pro-level dragging & clicking
+
+            // DIAGNOSTICS REMOVED: System Stabilized
         });
     }
 
@@ -74,8 +115,12 @@ export class EditorView {
                              style="background-image: linear-gradient(#f1f5f9 1px, transparent 1px), linear-gradient(90deg, #f1f5f9 1px, transparent 1px); background-size: 20px 20px;">
                         </div>
 
-                        <!-- Layer 2: Scene (Renderer targets this, so it won't clear the grid) -->
+                        <!-- Layer 2: Scene (Padding Container) -->
                         <div id="mop-scene" class="absolute inset-0 z-10 p-24 pointer-events-none child-events-auto">
+                            <!-- Inner Layer A: Graph Content (Cleared by Renderer) -->
+                            <div id="mop-graph-layer" class="absolute inset-0"></div>
+                            
+                            <!-- Inner Layer B: Gizmo Layer (Injected dynamically) -->
                         </div>
                     </div>
 
@@ -89,9 +134,14 @@ export class EditorView {
     }
 
     initViewport() {
-        // Initialize the engine (Passing the correct ID for the transformed layer)
+        // Initialize Viewport Engine (Zoom/Pan)
         this.viewport = new ViewportEngine('mop-viewport', 'mop-viewport-root');
 
+        // Initialize Atomic Interaction Manager
+        this.interactionManager = new InteractionManager(this);
+
+        // LEGACY INTERACTIONS DISABLED - MIGRATED TO ATOMIC STRATEGIES
+        // this.setupInteractions();
         // Hook up HUD updates
         const scaleLabel = document.getElementById('viewport-scale');
         this.viewport.on('change', (state) => {
@@ -99,8 +149,20 @@ export class EditorView {
         });
 
         // Initialize Renderer targeting the Scene layer
-        const sceneEl = document.getElementById('mop-scene');
-        this.renderer = new CanvasRenderer(sceneEl);
+        // Initialize Renderer targeting the Graph Layer (NOT the Scene container itself)
+        const graphLayer = document.getElementById('mop-graph-layer');
+        this.renderer = new CanvasRenderer(graphLayer);
+
+        // Initialize Gizmo Renderer (Overlay Painter)
+        const gizmoLayer = document.getElementById('mop-gizmo-layer');
+        if (gizmoLayer) {
+            import('./GizmoRenderer.js').then(({ GizmoRenderer }) => {
+                console.log('[EditorView] GizmoRenderer Loaded & Initialized');
+                this.gizmoRenderer = new GizmoRenderer(gizmoLayer, this);
+            }).catch(err => console.error('[EditorView] Failed to load GizmoRenderer:', err));
+        } else {
+            console.error('[EditorView] #mop-gizmo-layer NOT FOUND in DOM');
+        }
     }
 
     async loadProject() {
@@ -212,158 +274,168 @@ export class EditorView {
     }
 
     /**
+     * 计算曼哈顿折线路径 (Industrial Orthogonal Routing)
+     */
+    calcManhattanPath(p1, p2, orientation1 = 'right', orientation2 = 'left') {
+        const stub = 20; // 20px straight line out
+
+        // 1. Calculate Anchors with Stubs
+        let start = { ...p1 };
+        let end = { ...p2 };
+
+        // 2. Generate path points
+        // Simplified Manhattan: [Start, StartStub, EndStub, End]
+        const points = [];
+        points.push(`${p1.x},${p1.y}`);
+
+        let sAnchor = { x: p1.x, y: p1.y };
+        if (orientation1 === 'right') sAnchor.x += stub;
+        else if (orientation1 === 'left') sAnchor.x -= stub;
+        else if (orientation1 === 'bottom') sAnchor.y += stub;
+        else if (orientation1 === 'top') sAnchor.y -= stub;
+        points.push(`${sAnchor.x},${sAnchor.y}`);
+
+        let eAnchor = { x: p2.x, y: p2.y };
+        if (orientation2 === 'right') eAnchor.x += stub;
+        else if (orientation2 === 'left') eAnchor.x -= stub;
+        else if (orientation2 === 'bottom') eAnchor.y += stub;
+        else if (orientation2 === 'top') eAnchor.y -= stub;
+
+        // Middle point for Z-shape
+        const midX = (sAnchor.x + eAnchor.x) / 2;
+        points.push(`${midX},${sAnchor.y}`);
+        points.push(`${midX},${eAnchor.y}`);
+
+        points.push(`${eAnchor.x},${eAnchor.y}`);
+        points.push(`${p2.x},${p2.y}`);
+
+        return points.join(' ');
+    }
+
+    /**
      * Professional Interaction Engine
      * Handles coordinate transformations, visual layer dragging, and transactional SSOT updates.
      */
-    setupInteractions() {
-        const sceneEl = document.getElementById('mop-scene');
+    // --- Legacy Interactions Removed (Migrated to InteractionManager) ---
+    // See interactions/InteractionManager.js and strategies/*.js
 
-        // 1. Capture Interaction Start (Switch to mousedown for consistency with Viewport)
-        sceneEl.addEventListener('mousedown', (e) => {
-            // CRITICAL: If Space is held, DO NOT handle node dragging.
-            // Let the event bubble to ViewportEngine.
-            if (this.viewport && this.viewport.state.isSpacePressed) {
-                return;
-            }
+    /**
+     * Delete a node and its connections (Transaction).
+     * @param {string} nodeId - ID of the node to delete
+     */
+    deleteNode(nodeId) {
+        if (!nodeId) return;
 
-            const nodeEl = e.target.closest('mop-node');
-            if (!nodeEl) return;
+        console.log('[EditorView] Deleting Node:', nodeId);
 
-            // Only stop propagation if we are actually dragging a node
-            e.stopPropagation();
+        // 1. Remove Node
+        this.graphData.nodes = this.graphData.nodes.filter(n => n.id !== nodeId);
 
-            const nodeId = nodeEl.getAttribute('id');
-            const nodeData = this.graphData.nodes.find(n => n.id === nodeId);
-            if (!nodeData) return;
+        // 2. Remove Connected Edges
+        this.graphData.edges = (this.graphData.edges || []).filter(e => e.sourceId !== nodeId && e.targetId !== nodeId);
 
-            // Transform Mouse -> World Coordinate
-            const mouseWorldPos = this.viewport.toWorld(e.clientX, e.clientY);
+        // 3. Clear Selection (Safety)
+        this.selection.delete(nodeId);
 
-            // Critical Fix: Node Data X/Y is relative to Lane, but we drag in World Space.
-            // We need to store the world offset.
-            let parentX = 0;
-            let parentY = 0;
+        // 4. Update Visuals
+        // Update Graph Layer
+        this.renderer.render(this.graphData);
+        // Update Gizmo Layer (Remove box)
+        if (this.gizmoRenderer) {
+            this.gizmoRenderer.render(this.selection);
+        }
 
-            if (nodeData.laneId) {
-                // Find parent lane world position
-                const parentLane = this.graphData.lanes.find(l => l.id === nodeData.laneId);
-                if (parentLane) {
-                    // Note: In our current renderer, lanes start at x=100 and Y is computed
-                    const laneTop = this.getLaneTop(parentLane.id);
-                    parentX = parentLane.x || 100;
-                    parentY = laneTop;
-                }
-            }
+        console.log('[EditorView] Node Deleted. Remaining Nodes:', this.graphData.nodes.length);
+    }
 
-            const nodeWorldX = parentX + nodeData.x;
-            const nodeWorldY = parentY + nodeData.y;
+    /**
+     * Update a node's data and re-render (Transaction).
+     * @param {string} nodeId
+     * @param {Object} partialData - e.g. { label: "New Text" }
+     */
+    updateNode(nodeId, partialData) {
+        const node = this.graphData.nodes.find(n => n.id === nodeId);
+        if (!node) return;
 
-            this.dragState = {
-                nodeId,
-                nodeEl,
-                startWorldX: nodeWorldX,
-                startWorldY: nodeWorldY,
-                parentX,
-                parentY,
-                mouseStartX: mouseWorldPos.x,
-                mouseStartY: mouseWorldPos.y
+        console.log('[EditorView] Updating Node:', nodeId, partialData);
+
+        // 1. Merge Data
+        Object.assign(node, partialData);
+
+        // 2. Re-render Graph (to update text)
+        this.renderer.render(this.graphData);
+
+        // 3. Re-render Gizmos (in case size changed - though currently size is usually fixed or strictly CSS)
+        // If text wraps, height might change.
+        if (this.gizmoRenderer) {
+            this.gizmoRenderer.render(this.selection);
+        }
+    }
+
+    /**
+     * REACTIVE EDGE UPDATE (Best Practice: Partial Update)
+     * Recalculates paths for all edges connected to the given node.
+     * Called by InteractionManager during drag.
+     */
+    updateConnectedEdges(nodeId) {
+        if (!this.graphData.edges) return;
+
+        // 1. Find relevant edges
+        const edges = this.graphData.edges.filter(e => e.sourceId === nodeId || e.targetId === nodeId);
+
+        // 2. Batch DOM read (Optimization)
+        // We need source/target elements for each edge
+        const portCache = new Map(); // Key: nodeId-dir, Value: {x,y}
+
+        edges.forEach(edge => {
+            // Recalculate Path
+            const sourceEl = this.container.querySelector(`mop-node[id="${edge.sourceId}"]`);
+            const targetEl = this.container.querySelector(`mop-node[id="${edge.targetId}"]`);
+
+            if (!sourceEl || !targetEl) return;
+
+            // TODO: Extract getShortDir/getRelativePos to shared util or helper
+            // For now, we inline specific DOM logic for speed
+            const getPos = (node, dir) => {
+                const map = { top: 'n', bottom: 's', left: 'w', right: 'e' };
+                const short = map[dir] || 'n';
+                const port = node.shadowRoot.querySelector(`.port-${short}`);
+                if (!port) return { x: 0, y: 0 };
+
+                // CRITICAL FIX: Use SCENE as reference layer (Accounts for Pan/Zoom Transform)
+                if (!this.scene) this.scene = this.container.querySelector('#mop-scene');
+
+                const rect = port.getBoundingClientRect();
+                const sceneRect = this.scene.getBoundingClientRect();
+                const scale = this.viewport.state.scale;
+
+                return {
+                    x: (rect.left - sceneRect.left + rect.width / 2) / scale,
+                    y: (rect.top - sceneRect.top + rect.height / 2) / scale
+                };
             };
 
-            nodeEl.style.transition = 'none';
-            nodeEl.style.zIndex = '1000';
-            nodeEl.classList.add('dragging-active');
-        });
+            let start = getPos(sourceEl, edge.sourceDir);
+            let end = getPos(targetEl, edge.targetDir);
 
-        // 2. High-Performance Visual Drag (60FPS)
-        window.addEventListener('mousemove', (e) => {
-            if (!this.dragState) return;
+            // 3. Update Model
+            edge.points = this.calcManhattanPath(start, end, edge.sourceDir, edge.targetDir);
 
-            const currentWorldPos = this.viewport.toWorld(e.clientX, e.clientY);
-            const dx = currentWorldPos.x - this.dragState.mouseStartX;
-            const dy = currentWorldPos.y - this.dragState.mouseStartY;
+            // 4. Update DOM (Direct, no full render)
+            // PERFORMANCE: Direct Attribute Update (High Star Practice)
+            // We bypass full graph render and only tell the specific edge component to update.
+            // EdgeComponent observes 'points' and will re-render itself locally.
+            // This avoids "Layout Thrashing" and "Split Brain" issues.
 
-            // Updated World Position
-            const updatedWorldX = this.dragState.startWorldX + dx;
-            const updatedWorldY = this.dragState.startWorldY + dy;
-
-            // Convert back to Local Relative Position for the DOM element
-            const localX = updatedWorldX - this.dragState.parentX;
-            const localY = updatedWorldY - this.dragState.parentY;
-
-            this.dragState.nodeEl.style.left = localX + 'px';
-            this.dragState.nodeEl.style.top = localY + 'px';
-        });
-
-        // 3. Transactional Commit
-        window.addEventListener('mouseup', () => {
-            if (!this.dragState) return;
-
-            const { nodeId, nodeEl, parentX, parentY } = this.dragState;
-            const localX = parseFloat(nodeEl.style.left);
-            const localY = parseFloat(nodeEl.style.top);
-
-            const worldX = localX + parentX;
-            const worldY = localY + parentY;
-
-            const nodeData = this.graphData.nodes.find(n => n.id === nodeId);
-            if (nodeData) {
-                // Detect new Lane
-                const newLaneId = this.detectLaneAt(worldX, worldY);
-
-                if (newLaneId !== nodeData.laneId) {
-                    // Handle cross-lane movement: recalculate local coords for new lane
-                    const newLaneWorldY = this.getLaneTop(newLaneId);
-                    const newLaneWorldX = 100; // Standard for now
-
-                    nodeData.x = worldX - newLaneWorldX;
-                    nodeData.y = worldY - newLaneWorldY;
-                    nodeData.laneId = newLaneId;
-                } else {
-                    nodeData.x = localX;
-                    nodeData.y = localY;
-                }
+            const edgeEl = this.container.querySelector(`mop-edge[id="${edge.id}"]`);
+            if (edgeEl) {
+                // Direct DOM update for high performance without full re-render
+                edgeEl.setAttribute('points', edge.points);
             }
-
-            this.renderer.render(this.graphData);
-            this.dragState = null;
         });
-    }
 
-    /**
-     * Helper: Get precise Top Y of a lane in World Space
-     */
-    getLaneTop(laneId) {
-        if (!laneId) return 0;
-        let currentY = 100;
-        const gap = 6; // 用户要求的 6px
-        const sortedLanes = [...this.graphData.lanes].sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
-
-        for (const lane of sortedLanes) {
-            if (lane.id === laneId) return currentY;
-            currentY += (parseFloat(lane.h) || 220) + gap;
-        }
-        return 0;
-    }
-
-    /**
-     * Logic: Detect Lane based on World Coordinates (Sync with Virtual Flex Logic)
-     */
-    detectLaneAt(worldX, worldY) {
-        let currentY = 100;
-        const gap = 10;
-        const sortedLanes = [...this.graphData.lanes].sort((a, b) => (a.order || 0) - (b.order || 0));
-
-        for (const lane of sortedLanes) {
-            const laneTop = currentY;
-            const laneBottom = currentY + (lane.h || 220);
-
-            // Check if Y coordinate falls within Lane vertical bounds
-            if (worldY >= laneTop && worldY <= laneBottom) {
-                return lane.id;
-            }
-
-            currentY = laneBottom + gap;
-        }
-        return null; // Loose node in World Space
+        // REMOVED: this.renderer.render(this.graphData);
+        // We do NOT want to re-render the whole graph during drag.
+        // It conflicts with the Drag SDK (which moves nodes via transform).
     }
 }
