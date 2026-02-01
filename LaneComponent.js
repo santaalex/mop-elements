@@ -132,16 +132,6 @@ export class MoPLane extends HTMLElement {
                 composed: true
             }));
         };
-
-        // 核心信号：双击请求重命名 (Atomic Signal)
-        header.ondblclick = (e) => {
-            e.stopPropagation();
-            this.dispatchEvent(new CustomEvent('lane-rename', {
-                detail: { name, currentName: name },
-                bubbles: true,
-                composed: true
-            }));
-        };
     }
 
     /**
@@ -150,6 +140,7 @@ export class MoPLane extends HTMLElement {
      */
     setupInteractions() {
         const container = this.shadowRoot.querySelector('.lane-container');
+        if (!container) return; // Guard for early calls
 
         this.addEventListener('dragenter', (e) => {
             e.preventDefault();
@@ -180,6 +171,16 @@ export class MoPLane extends HTMLElement {
                 composed: true
             }));
         });
+    }
+
+    /**
+     * 高星最佳实践：暴露 Shadow DOM 内部几何信息
+     * 用于外部 InteractionManager 进行精确的碰撞检测
+     */
+    getHeaderRect() {
+        const header = this.shadowRoot.querySelector('.lane-header');
+        if (!header) return null;
+        return header.getBoundingClientRect();
     }
 }
 
