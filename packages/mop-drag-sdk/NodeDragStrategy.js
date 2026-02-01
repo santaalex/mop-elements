@@ -1,4 +1,4 @@
-import { BaseStrategy } from 'https://cdn.jsdelivr.net/gh/santaalex/mop-elements@main/interactions/strategies/BaseStrategy.js';
+import { BaseStrategy } from '../../../interactions/strategies/BaseStrategy.js';
 // SDK Internal Import
 import { DragCore } from './DragCore.js';
 
