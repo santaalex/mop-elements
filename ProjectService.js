@@ -74,6 +74,20 @@ export class ProjectService extends MingdaoBaseService {
                     console.warn('[ProjectService] Missing ID for row:', Object.keys(row), row);
                 }
 
+                // Hierarchy Resolution
+                let parentInfo = null;
+                const rawParent = row[ENV_CONFIG.FIELDS.PARENT_ID] || row.parent_id;
+                if (rawParent) {
+                    // Check if it's an array (Mingdao returns array for relations) or object
+                    const parentObj = Array.isArray(rawParent) ? rawParent[0] : rawParent;
+                    if (parentObj) {
+                        parentInfo = {
+                            id: parentObj.sid || parentObj.rowid || parentObj.id,
+                            name: parentObj.name || parentObj.project_name || 'Unknown Parent'
+                        };
+                    }
+                }
+
                 return {
                     id: finalId,
                     name: row[ENV_CONFIG.FIELDS.PROJ_NAME] || '未命名项目',
@@ -82,7 +96,8 @@ export class ProjectService extends MingdaoBaseService {
                     version: row[ENV_CONFIG.FIELDS.PROJ_VER],
                     canvasData: row[ENV_CONFIG.FIELDS.CANVAS_DATA] || JSON.stringify({ version: "3.0", lanes: [], nodes: [] }),
                     updatedAt: updatedStr,
-                    owner: ownerName
+                    owner: ownerName,
+                    parent: parentInfo // <--- New Field
                 };
             });
         } else {
@@ -93,12 +108,15 @@ export class ProjectService extends MingdaoBaseService {
 
     /**
      * Create New Project
+     * @param {string} name 
+     * @param {string} creatorName 
+     * @param {string} parentId - Optional: ID of the parent project (for L2)
      */
-    async createProject(name, creatorName = 'Unknown') {
+    async createProject(name, creatorName = 'Unknown', parentId = null) {
         const now = new Date();
         const dateStr = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
 
-        // V3 API Rule: Inside 'fields' array, the key MUST be 'id', even if we pass an alias string.
+        // V3 API Rule: Inside 'fields' array, the key MUST be 'id'
         const fields = [
             { id: ENV_CONFIG.FIELDS.PROJ_NAME, value: name },
             { id: ENV_CONFIG.FIELDS.PROJ_CODE, value: 'P-' + Date.now().toString().slice(-6) },
@@ -108,6 +126,14 @@ export class ProjectService extends MingdaoBaseService {
             { id: ENV_CONFIG.FIELDS.PROJ_CREATOR, value: creatorName },
             { id: ENV_CONFIG.FIELDS.PROJ_DATE, value: dateStr }
         ];
+
+        // If Parent ID is provided, add the relation link
+        if (parentId) {
+            fields.push({
+                id: ENV_CONFIG.FIELDS.PARENT_ID,
+                value: String(parentId) // Mingdao Relation usually expects Row ID string
+            });
+        }
 
         // WAITING: V3 `rows` endpoint payload for aliases.
         // Standard: [{ controlId: "alias", value: "val" }] works in some versions, or simply map { "alias": "val" } in `cells`?

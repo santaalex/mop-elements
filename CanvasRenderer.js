@@ -94,9 +94,15 @@ export class CanvasRenderer {
         node.setAttribute('type', data.type || 'activity'); // process, start, end, etc.
         node.setAttribute('label', data.label || '新建节点');
 
-        if (data.status) node.setAttribute('status', data.status);
-        if (data.kpi) node.setAttribute('kpi', data.kpi);
         if (data.color) node.setAttribute('color', data.color);
+        if (data.linkedProjectId) {
+            let pid = data.linkedProjectId;
+            if (typeof pid === 'object') {
+                // Try to salvage
+                pid = pid.rowId || pid.id || JSON.stringify(pid);
+            }
+            node.setAttribute('data-linked', pid);
+        }
 
         // 关键逻辑：层级挂载 (Nesting)
         // 如果节点属于某个泳道，我们把它挂载到泳道内部 (Slots机制 / DOM树结构)

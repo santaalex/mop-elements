@@ -10,7 +10,7 @@ export class MoPNode extends HTMLElement {
     }
 
     static get observedAttributes() {
-        return ['type', 'label', 'status', 'kpi', 'selected', 'color', 'width', 'height'];
+        return ['type', 'label', 'status', 'kpi', 'selected', 'color', 'width', 'height', 'data-linked'];
     }
 
     connectedCallback() {
@@ -28,6 +28,8 @@ export class MoPNode extends HTMLElement {
         const kpi = this.getAttribute('kpi') || '';
         const selected = this.hasAttribute('selected');
         const color = this.getAttribute('color') || '#6366f1';
+        const isLinked = this.hasAttribute('data-linked') && this.getAttribute('data-linked') !== 'null';
+
 
         // 默认尺寸定义
         const sizes = {
@@ -142,7 +144,7 @@ export class MoPNode extends HTMLElement {
 
             <div class="node-container">
                 <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="visible">
-                    ${this.getTemplate(type, w, h, color, label, kpi)}
+                    ${this.getTemplate(type, w, h, color, label, kpi, isLinked)}
                 </svg>
                 
                 <!-- Ports -->
@@ -154,18 +156,25 @@ export class MoPNode extends HTMLElement {
         `;
     }
 
-    getTemplate(type, w, h, color, label, kpi) {
+    getTemplate(type, w, h, color, label, kpi, isLinked) {
         // 核心形状工厂
         switch (type) {
             case 'process':
+                // Icon Logic: If Linked -> Arrow, If Not -> Plus
+                const iconPath = isLinked
+                    ? 'M6 9 h12 M13 4 l5 5 l-5 5' // Arrow Right
+                    : 'M7 9 h10 M12 4 v10'; // Plus
+
+                const iconColor = isLinked ? '#4f46e5' : '#94a3b8'; // Indigo vs Slate
+
                 return `
                     <rect x="0" y="0" width="${w}" height="${h}" rx="10" class="glass-bg" />
                     <rect x="0" y="0" width="${w}" height="4" rx="2" fill="${color}" opacity="0.8" />
                     <text x="${w / 2}" y="${h / 2 - 5}" class="label-text">${label}</text>
-                    <!-- 下钻标识：截图1中的小方格 + -->
+                    <!-- 下钻标识：动态 Plus/Link -->
                     <g transform="translate(${w / 2 - 12}, ${h - 18})">
-                        <rect width="24" height="18" rx="4" fill="white" stroke="rgba(0,0,0,0.2)" stroke-width="1" />
-                        <path d="M7 9 h10 M12 4 v10" stroke="#1e293b" stroke-width="1.5" />
+                        <rect width="24" height="18" rx="4" fill="white" stroke="rgba(0,0,0,0.1)" stroke-width="1" />
+                        <path d="${iconPath}" stroke="${iconColor}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                     </g>
                     ${this.renderBulb(w - 20, 15, kpi)}
                 `;
@@ -203,7 +212,7 @@ export class MoPNode extends HTMLElement {
             default: // activity
                 return `
                     <rect x="0" y="0" width="${w}" height="${h}" rx="8" class="glass-bg" />
-                    <rect x="0" y="0" width="4" height="${h}" rx="2" fill="${color}" />
+                    <!-- <rect x="0" y="0" width="4" height="${h}" rx="2" fill="${color}" /> -->
                     <text x="${w / 2}" y="${h / 2}" class="label-text">${label}</text>
                     ${this.renderBulb(w - 15, 10, kpi)}
                 `;

@@ -28,7 +28,9 @@ export const ENV_CONFIG = {
         CANVAS_DATA: 'canvas_data',
         // Manual Metadata (Optional but Recommended)
         PROJ_CREATOR: 'creator_name',    // 文本/Member
-        PROJ_DATE: 'created_at'          // 文本/Date
+        PROJ_DATE: 'created_at',         // 文本/Date
+        // Hierarchy
+        PARENT_ID: 'parent_id'           // 关联记录 (Self)
     },
 
     // Business Logic Constants

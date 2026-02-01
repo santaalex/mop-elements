@@ -91,11 +91,39 @@ export class EditorView {
                     <button id="tool-pointer" class="w-10 h-10 rounded bg-slate-100 flex items-center justify-center mb-2 text-indigo-600 shadow-inner" title="Pointer">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" /></svg>
                     </button>
-                    <button id="btn-add-lane" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors" title="Add Lane">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" /></svg>
-                    </button>
-                    <button id="btn-add-node" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors" title="Add Process Node">
+                    <!-- L2 Tools (Hidden by default in L1) -->
+                    <div id="l2-tools" class="flex flex-col items-center w-full" style="display: none;">
+                        <button id="btn-add-lane" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors" title="Add Swimlane">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" /></svg>
+                        </button>
+                    </div>
+                    <!-- Common Tools -->
+                    <button id="btn-add-node" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors" title="Add Process Node (Activity)">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                    </button>
+
+                    <!-- BPMN Tools (Start/End) -->
+                    <button id="btn-add-start" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors" title="Start Event">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-width="1.5"></circle></svg>
+                    </button>
+                    <button id="btn-add-end" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors" title="End Event">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-width="3"></circle></svg>
+                    </button>
+
+                    <!-- BPMN Gateways -->
+                    <button id="btn-add-xor" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors" title="XOR Gateway (Exclusive)">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 2l10 10-10 10L2 12z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 8l8 8m0-8l-8 8"></path></svg>
+                    </button>
+                    <button id="btn-add-and" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors" title="AND Gateway (Parallel)">
+                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 2l10 10-10 10L2 12z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 7v10M7 12h10"></path></svg>
+                    </button>
+                    <button id="btn-add-or" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors" title="OR Gateway (Inclusive)">
+                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 2l10 10-10 10L2 12z"></path><circle cx="12" cy="12" r="5" stroke-width="1.5"></circle></svg>
+                    </button>
+
+                    <!-- Drill Down Button (Explicit) -->
+                    <button id="btn-drill-down" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-indigo-600 transition-colors" title="Open Detail View (Drill Down)">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                     </button>
                     
                     <div class="flex-grow"></div>
@@ -110,7 +138,18 @@ export class EditorView {
                 </div>
 
                 <!-- 2. Canvas Area -->
+
                 <div id="mop-viewport" class="flex-1 relative overflow-hidden cursor-grab active:cursor-grabbing bg-slate-100">
+                    
+                    <!-- BREADCRUMB BAR (Top Overlay) -->
+                    <div id="breadcrumb-bar" class="absolute top-0 left-0 w-full h-12 bg-white/80 backdrop-blur border-b border-slate-200 z-30 flex items-center px-4 shadow-sm">
+                        <!-- Content Injected Dynamically -->
+                        <div class="flex items-center text-sm text-slate-600">
+                            <span class="hover:text-indigo-600 cursor-pointer font-medium" onclick="window.location.hash='#/dashboard'">首页</span>
+                            <span class="mx-2 text-slate-400">/</span>
+                            <span id="breadcrumb-content" class="flex items-center">Loading...</span>
+                        </div>
+                    </div>
                     <!-- mop-viewport-root is the ONLY element with .mop-canvas-content -->
                     <!-- This layer handles the CSS transform (scale/pan) -->
                     <div id="mop-viewport-root" class="mop-canvas-content absolute top-0 left-0 bg-white shadow-2xl" 
@@ -239,8 +278,86 @@ export class EditorView {
 
             this.renderer.render(this.graphData);
 
+            // Update UI Context (Breadcrumbs & Toolbar)
+            this.updateUIContext();
+
             // Auto-fit (Simple center for now)
             this.viewport.centerOn(1000, 500); // Approximate center of standard canvas
+
+            // --- EXPOSE DRILL DOWN LOGIC ---
+            window.drillDown = async (nodeId) => {
+                const node = this.graphData.nodes.find(n => n.id === nodeId);
+                if (!node) return;
+
+                console.log('[EditorView] DrillDown Triggered for:', node.label);
+
+                // 1. Check if L2 Project already exists
+                let targetId = node.linkedProjectId;
+
+                // BUG FIX: Handle object corruption or object wrapping
+                if (typeof targetId === 'object' && targetId !== null) {
+                    console.warn('[EditorView] Detected Object-type ID, attempting to extract string...', targetId);
+                    // Attempt to salvag: rowId, id, or value
+                    targetId = targetId.rowId || targetId.id || targetId.value || null;
+                    if (!targetId) {
+                        console.error('[EditorView] Failed to extract ID from object. Resetting.');
+                        targetId = null; // Treat as not linked if corrupted
+                    }
+                }
+
+                // Specific check for string "[object Object]" which indicates past corruption
+                if (targetId === '[object Object]') {
+                    targetId = null;
+                }
+
+                if (targetId) {
+                    // Navigate only (User Request #2)
+                    window.location.hash = `#/editor/${targetId}`;
+                } else {
+                    // 2. Auto-Create L2 Project
+                    if (confirm(`是否为节点 "${node.label}" 创建详细流程图 (L2)?`)) {
+                        try {
+                            const newName = `${node.label} (详细)`;
+                            const newProj = await this.projectService.createProject(
+                                newName,
+                                'System',
+                                this.projectId
+                            );
+
+                            console.log('[EditorView] Create Project Result:', newProj);
+
+                            // Robust ID Extraction (Handle Mingdao V3 potentially returning Object)
+                            let newId = null;
+                            if (newProj && newProj.success) {
+                                const rawId = newProj.rowId || newProj.id;
+                                if (typeof rawId === 'object') {
+                                    newId = rawId.rowId || rawId.id || JSON.stringify(rawId); // Fallback
+                                    // If rawId is just { success: true, rowId: "..." } nested?? No.
+                                    // Assuming rawId is the corrupt object, let's treat it carefully.
+                                    // Log it
+                                    console.warn('API returned Object ID:', rawId);
+                                } else {
+                                    newId = rawId;
+                                }
+                            }
+
+                            if (newId) {
+                                // 3. Link L1 Node to New L2 Project
+                                this.updateNode(nodeId, { linkedProjectId: newId });
+                                await this.projectService.saveCanvas(this.projectId, JSON.stringify(this.graphData));
+
+                                // 4. Navigate
+                                window.location.hash = `#/editor/${newId}`;
+                            } else {
+                                alert('创建子项目失败: ' + (newProj.message || 'API返回格式异常'));
+                            }
+                        } catch (e) {
+                            console.error('DrillDown Error:', e);
+                            alert('创建失败: ' + e.message);
+                        }
+                    }
+                }
+            };
 
         } catch (err) {
             console.error('Refused to load project:', err);
@@ -275,20 +392,63 @@ export class EditorView {
             console.log(`[Editor] Added Lane ${newLane.id} with Order ${newLane.order}`);
         };
 
-        // Add Node
+        // Add Node (Process/Activity)
         document.getElementById('btn-add-node').onclick = () => {
             const newNode = {
                 id: 'node-' + Date.now(),
-                type: 'process',
-                label: 'New Process',
-                x: 200,
+                type: 'activity',
+                label: '活动Activity',
+                x: 250,
                 y: 200,
                 status: 'normal'
             };
             this.graphData.nodes.push(newNode);
             this.renderer.render(this.graphData);
-            console.log('[Editor] Added Node:', newNode.id);
         };
+
+        // Add Start Event
+        document.getElementById('btn-add-start').onclick = () => {
+            const newNode = { id: 'node-' + Date.now(), type: 'start', label: '开始', x: 100, y: 200 };
+            this.graphData.nodes.push(newNode);
+            this.renderer.render(this.graphData);
+        };
+        // Add End Event
+        document.getElementById('btn-add-end').onclick = () => {
+            const newNode = { id: 'node-' + Date.now(), type: 'end', label: '结束', x: 500, y: 200 };
+            this.graphData.nodes.push(newNode);
+            this.renderer.render(this.graphData);
+        };
+        // Add XOR Gateway
+        document.getElementById('btn-add-xor').onclick = () => {
+            const newNode = { id: 'node-' + Date.now(), type: 'xor', label: '网关', x: 350, y: 200 };
+            this.graphData.nodes.push(newNode);
+            this.renderer.render(this.graphData);
+        };
+        // Add AND Gateway
+        document.getElementById('btn-add-and').onclick = () => {
+            const newNode = { id: 'node-' + Date.now(), type: 'and', label: '并行', x: 400, y: 200 };
+            this.graphData.nodes.push(newNode);
+            this.renderer.render(this.graphData);
+        };
+        // Add OR Gateway
+        document.getElementById('btn-add-or').onclick = () => {
+            const newNode = { id: 'node-' + Date.now(), type: 'or', label: '相容', x: 450, y: 200 };
+            this.graphData.nodes.push(newNode);
+            this.renderer.render(this.graphData);
+        };
+
+        // Drill Down Button
+        const btnDrill = document.getElementById('btn-drill-down');
+        if (btnDrill) {
+            btnDrill.onclick = () => {
+                if (this.selection.size !== 1) {
+                    alert('请先选择一个节点');
+                    return;
+                }
+                const nodeId = [...this.selection][0];
+                if (window.drillDown) window.drillDown(nodeId);
+            };
+        }
 
         // Save Button (SSOT Mode)
         document.getElementById('btn-save').onclick = async () => {
@@ -567,5 +727,38 @@ export class EditorView {
                 if (edge) edge.setAttribute('selected', 'true');
             }
         });
+    }
+    /**
+     * Updates the UI based on Project Context (L1 vs L2)
+     */
+    updateUIContext() {
+        if (!this.projectData) return;
+        const isL2 = !!this.projectData.parent; // Check if we have a parent
+
+        // 1. Update Breadcrumbs (Header)
+        const breadcrumbEl = document.getElementById('breadcrumb-content');
+        if (breadcrumbEl) {
+            let html = '';
+            if (isL2) {
+                // Show Parent Link
+                html += `
+                    <span class="hover:text-indigo-600 cursor-pointer text-indigo-500" 
+                          onclick="window.location.hash='#/editor/${this.projectData.parent.id}'">
+                          ${this.projectData.parent.name}
+                    </span>
+                    <span class="mx-2 text-slate-400">/</span>
+                `;
+            }
+            // Show Current Project
+            html += `<span class="font-bold text-slate-800">${this.projectData.name}</span>`;
+            breadcrumbEl.innerHTML = html;
+        }
+
+        // 2. Update Toolbar (Left)
+        const l2Tools = document.getElementById('l2-tools');
+        if (l2Tools) {
+            // Only show Swimlane tools if we are in L2 (have a parent)
+            l2Tools.style.display = isL2 ? 'flex' : 'none';
+        }
     }
 }

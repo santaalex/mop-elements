@@ -266,6 +266,13 @@ export class InteractionManager {
             return;
         }
 
+        // --- UI Protection Guard ---
+        // If clicking on Toolbar or Breadcrumbs, do not trigger Canvas interactions (like switching selection)
+        if (e.composedPath().some(el => el.classList && (el.classList.contains('toolbar') || el.id === 'breadcrumb-bar'))) {
+            // console.log('[InteractionManager] Ignoring UI Click');
+            return;
+        }
+
         // --- Phase 1: Semantic Omniscience (HitTest as Truth) ---
         const result = HitTest.analyze(e.clientX, e.clientY, e.composedPath());
 

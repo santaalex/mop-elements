@@ -252,7 +252,10 @@ export class DashboardView {
     async loadProjects() {
         const grid = document.getElementById('project-grid');
         try {
-            this.projects = await this.projectService.getProjects();
+            const allProjects = await this.projectService.getProjects();
+            // User Request: Only show root projects (no parent) in the dashboard
+            this.projects = allProjects.filter(p => !p.parent);
+            console.log(`[Dashboard] Filtering: Total ${allProjects.length} -> Root ${this.projects.length}`);
             this.renderGrid(grid);
         } catch (error) {
             console.error(error);
