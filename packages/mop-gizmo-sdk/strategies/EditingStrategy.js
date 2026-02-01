@@ -1,4 +1,4 @@
-import { BaseStrategy } from '../../../../interactions/strategies/BaseStrategy.js';
+import { BaseStrategy } from '../../BaseStrategy.js';
 
 export class EditingStrategy extends BaseStrategy {
     constructor(manager) {
