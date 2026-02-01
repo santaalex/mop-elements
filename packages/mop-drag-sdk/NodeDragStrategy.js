@@ -1,4 +1,4 @@
-import { BaseStrategy } from '../../../interactions/strategies/BaseStrategy.js';
+import { BaseStrategy } from '../BaseStrategy.js';
 // SDK Internal Import
 import { DragCore } from './DragCore.js';
 
