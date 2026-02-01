@@ -14,8 +14,14 @@ export class NodeDragStrategy extends BaseStrategy {
     constructor(manager) {
         super(manager);
         this.dragContext = null;
-        // Assumption: LayoutConfig is injected or global.
-        const config = window.LayoutConfig || { LANE_START_X: 100, LANE_START_Y: 100, LANE_GAP: 20, LANE_DEFAULT_HEIGHT: 150 };
+        // CRITICAL FIX: Use the same Single Source of Truth as the renderer
+        // Old default lane gap was 20px, new is 6px. This was causing a 14px "jump".
+        const config = window.LayoutConfig || {
+            LANE_START_X: 100,
+            LANE_START_Y: 100,
+            LANE_GAP: 6,
+            LANE_DEFAULT_HEIGHT: 220
+        };
         this.core = new DragCore(config);
     }
 
@@ -43,6 +49,25 @@ export class NodeDragStrategy extends BaseStrategy {
 
         if (!nodeData) return;
 
+        // --- NEW: Sync Selection so Gizmo appears during drag ---
+        if (!event.shiftKey) {
+            // Single select: if clicking a node that isn't selected, make it the only selection.
+            if (!editor.selection.has(nodeId)) {
+                editor.selection.clear();
+                editor.selection.add(nodeId);
+            }
+        } else {
+            // Multi-select toggle
+            if (!editor.selection.has(nodeId)) {
+                editor.selection.add(nodeId);
+            }
+        }
+
+        // Immediately update Gizmos so they "stick" to the node during drag
+        if (editor.gizmoRenderer) {
+            editor.gizmoRenderer.render(editor.selection);
+        }
+
         // HIGH-STAR PRACTICE: Use "Delta" calculation.
         // Instead of trying to calculate "Where am I in the world" (Complex, prone to bugs),
         // we just calculate "How much did I move?" (Simple, Robust).
@@ -66,16 +91,14 @@ export class NodeDragStrategy extends BaseStrategy {
 
             // Node Start (CSS Coordinates)
             initialCssLeft: startLeft,
-            initialCssTop: startTop
+            initialCssTop: startTop,
+
+            hasMoved: false // BEST PRACTICE: Track if real movement started
         };
 
-        // UI Feedback
-        nodeEl.style.transition = 'none'; // Disable transition for instant follow
-        nodeEl.style.zIndex = '1000';     // Bring to front
-        nodeEl.classList.add('dragging-active');
-
-        // Capture for Edge Reactivity
-        this.manager.currentDraggedNodeId = nodeId;
+        // UI Feedback: DELAYED! Don't add classes yet to keep click detection pure
+        // nodeEl.style.transition = 'none'; 
+        // nodeEl.style.zIndex = '1000';
     }
 
     onMove(event) {
@@ -84,24 +107,31 @@ export class NodeDragStrategy extends BaseStrategy {
         const viewport = this.manager.editorView.viewport;
         const scale = viewport.state.scale;
 
-        // 1. Calculate Delta (How much moved in SCREEN pixels)
-        const dx = event.clientX - ctx.screenStartX;
-        const dy = event.clientY - ctx.screenStartY;
+        // 1. Calculate Distance
+        const dist = Math.hypot(event.clientX - ctx.screenStartX, event.clientY - ctx.screenStartY);
 
-        // 2. Convert to GRAPH pixels
-        const graphDx = dx / scale;
-        const graphDy = dy / scale;
+        // 2. Threshold Check: Only start visual movement after 5px
+        if (!ctx.hasMoved && dist > 5) {
+            ctx.hasMoved = true;
+            ctx.nodeEl.style.transition = 'none';
+            ctx.nodeEl.style.zIndex = '1000';
+            ctx.nodeEl.classList.add('dragging-active');
+            this.manager.currentDraggedNodeId = ctx.nodeId; // Start tracking for edges
+            console.log('[NodeDrag] Movement threshold met, starting drag.');
+        }
 
-        // 3. Apply to Initial Position
-        const newLeft = ctx.initialCssLeft + graphDx;
-        const newTop = ctx.initialCssTop + graphDy;
+        if (ctx.hasMoved) {
+            // 3. Calculate Delta
+            const dx = event.clientX - ctx.screenStartX;
+            const dy = event.clientY - ctx.screenStartY;
 
-        // 4. Update DOM
-        ctx.nodeEl.style.left = newLeft + 'px';
-        ctx.nodeEl.style.top = newTop + 'px';
+            const graphDx = dx / scale;
+            const graphDy = dy / scale;
 
-        // Note: InteractionManager.js handles calling editorView.updateConnectedEdges()
-        // effectively creating the reactivity loop.
+            // 4. Update DOM
+            ctx.nodeEl.style.left = (ctx.initialCssLeft + graphDx) + 'px';
+            ctx.nodeEl.style.top = (ctx.initialCssTop + graphDy) + 'px';
+        }
     }
 
     onEnd(event) {
@@ -111,10 +141,8 @@ export class NodeDragStrategy extends BaseStrategy {
 
         console.log('[NodeDrag] Ended.');
 
-        // Check Drag Distance (Threshold to distinguish Click vs Drag)
-        const dist = Math.hypot(event.clientX - ctx.screenStartX, event.clientY - ctx.screenStartY);
-
-        if (dist >= 5) {
+        // BEST PRACTICE: Only commit if we actually moved
+        if (ctx.hasMoved) {
             // --- Drag Commit Logic ---
             const finalWorldX = parseFloat(ctx.nodeEl.style.left);
             const finalWorldY = parseFloat(ctx.nodeEl.style.top);
@@ -127,35 +155,23 @@ export class NodeDragStrategy extends BaseStrategy {
             }
 
             // B. Update Data Model (Relative to Lane)
-            // Even if lane didn't change, X/Y relative to lane might have.
             const relativePos = this.core.toRelative(finalWorldX, finalWorldY, ctx.nodeData.laneId || 'default', editor.graphData.lanes);
             ctx.nodeData.x = relativePos.x;
             ctx.nodeData.y = relativePos.y;
 
             console.log('[NodeDrag] Data Saved:', { x: ctx.nodeData.x, y: ctx.nodeData.y });
-
-            // C. Sync Graph
-            // Optional: Full Render to align everything (Snap to grid if needed)
-            // But since our DOM update was precise, this visual change should be minimal.
-            // this.manager.editorView.renderer.render(this.manager.editorView.graphData); 
-            // ^ Commented out to prevent "flicker". We trust our DOM update.
-
         } else {
-            // --- Click Logic (Revert) ---
-            console.log('[NodeDrag] Drag too short, reverting.');
-            // Revert DOM to original data
-            // Or just trigger render
-            editor.renderer.render(editor.graphData);
-
-            // If dragging failed, treat as Click (e.g. for Selection)
-            // Note: SelectionStrategy usually handles this via precedence, 
-            // but if NodeDrag consumed the event, we yield back?
-            // Actually BaseStrategy handles precedence. Selection usually fires on MouseUp if no drag.
+            // --- Click Logic ---
+            // DO NOTHING! DO NOT RENDER!
+            // This leaves the DOM intact so the browser can recognize the second click of a dblclick.
+            console.log('[NodeDrag] Minimal movement, treating as purely intent-to-click.');
         }
 
         // Cleanup
-        ctx.nodeEl.classList.remove('dragging-active');
-        ctx.nodeEl.style.zIndex = '';
+        if (ctx.hasMoved) {
+            ctx.nodeEl.classList.remove('dragging-active');
+            ctx.nodeEl.style.zIndex = '';
+        }
         this.manager.currentDraggedNodeId = null;
         this.dragContext = null;
     }

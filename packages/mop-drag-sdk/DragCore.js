@@ -38,7 +38,8 @@ export class DragCore {
             const h = parseFloat(lane.h) || this.config.LANE_DEFAULT_HEIGHT;
             currentY += h + GAP;
         }
-        return this.config.LANE_START_Y;
+        // CRITICAL FIX: Fallback to 0 if lane not found, matching CanvasRenderer logic
+        return 0;
     }
 
     /**
@@ -80,8 +81,9 @@ export class DragCore {
      * @returns {Object} { x, y } relative to lane
      */
     toRelative(worldX, worldY, laneId, lanes) {
-        const laneTop = this.getLaneTop(lanes, laneId);
-        const laneX = this.config.LANE_START_X;
+        // If no lane, we use 0 offset as the reference
+        const laneTop = laneId ? this.getLaneTop(lanes, laneId) : 0;
+        const laneX = laneId ? this.config.LANE_START_X : 0;
 
         return {
             x: worldX - laneX,
