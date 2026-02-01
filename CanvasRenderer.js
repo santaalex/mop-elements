@@ -1,3 +1,5 @@
+import { LayoutConfig } from './LayoutConfig.js';
+
 /**
  * CanvasRenderer (The Painter)
  * 职责：将纯 JSON 数据转换为 DOM 元素并渲染到画布上。
@@ -24,18 +26,18 @@ export class CanvasRenderer {
         this.container.innerHTML = '';
         this.laneMap.clear();
 
-        // 2. 渲染泳道 (Containers) - 采用 Virtual Flex 堆叠逻辑
+        // 2. 渲染泳道 (Containers) - 采用 LayoutConfig 规则
         if (Array.isArray(graphData.lanes)) {
             // 首先按 order 排序
             const sortedLanes = [...graphData.lanes].sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
 
-            let currentY = 100; // 顶层起始偏移 (Number)
-            const gap = 6;      // 用户要求的紧凑间距 (6px)
+            let currentY = LayoutConfig.LANE_START_Y;
+            const gap = LayoutConfig.LANE_GAP;
 
             sortedLanes.forEach(laneData => {
                 this.renderLane(laneData, currentY);
                 // 确保高度被解析为纯数字，防止字符串拼接
-                const h = parseFloat(laneData.h) || 220;
+                const h = parseFloat(laneData.h) || LayoutConfig.LANE_DEFAULT_HEIGHT;
                 currentY = Number(currentY) + h + gap;
             });
         }
@@ -44,6 +46,13 @@ export class CanvasRenderer {
         if (Array.isArray(graphData.nodes)) {
             graphData.nodes.forEach(nodeData => {
                 this.renderNode(nodeData);
+            });
+        }
+
+        // 4. 渲染连线 (Edges)
+        if (Array.isArray(graphData.edges)) {
+            graphData.edges.forEach(edgeData => {
+                this.renderEdge(edgeData);
             });
         }
     }
@@ -67,6 +76,7 @@ export class CanvasRenderer {
         lane.style.position = 'absolute';
         lane.style.top = computedY + 'px';
         lane.style.left = (data.x || 100) + 'px';
+        lane.style.zIndex = '0'; // Ensure lanes are background
 
         // 挂载
         this.container.appendChild(lane);
@@ -92,21 +102,53 @@ export class CanvasRenderer {
         // 如果节点属于某个泳道，我们把它挂载到泳道内部 (Slots机制 / DOM树结构)
         // 这样拖动泳道时，节点会自动跟随，无需重新计算坐标。
         // 注意：Web Component 的 Slot 机制要求子元素在 Light DOM 中。
+        // 解耦逻辑：扁平化渲染 (Flat Rendering)
+        // 即使节点属于某个泳道，也将其直接挂载到 mop-canvas-content，避免 Z-Index 堆叠上下文陷阱
+        // 这样节点可以自由跨越泳道而不被遮挡。
+
         const parentId = data.laneId;
         const parentLane = this.laneMap.get(parentId);
 
+        // 计算世界坐标
+        let worldX = data.x || 0;
+        let worldY = data.y || 0;
+
         if (parentLane) {
-            // 相对定位 (相对于泳道左上角)
-            node.style.position = 'absolute'; // 确保在 Slot 内也是 absolute
-            node.style.top = (data.y || 10) + 'px'; // 这里的 y 是泳道内的相对坐标
-            node.style.left = (data.x || 10) + 'px';
-            parentLane.appendChild(node);
-        } else {
-            // 兜底：没有归属泳道的节点，直接挂载到画布 (绝对世界坐标)
-            node.style.position = 'absolute';
-            node.style.top = (data.y || 0) + 'px';
-            node.style.left = (data.x || 0) + 'px';
-            this.container.appendChild(node);
+            // 如果有归属泳道，需要加上泳道的偏移量
+            // 注意：data.x 是相对于泳道的，但渲染要用绝对坐标
+            // parentLane.style.left 是字符串 "100px"，需转换
+            const laneX = parseFloat(parentLane.style.left) || 0;
+            const laneY = parseFloat(parentLane.style.top) || 0;
+
+            worldX += laneX;
+            worldY += laneY;
         }
+
+        // 设置绝对定位 (世界坐标)
+        node.style.position = 'absolute';
+        node.style.left = worldX + 'px';
+        node.style.top = worldY + 'px';
+        node.style.zIndex = '10'; // Ensure nodes are always above lanes
+
+        // 统一挂载到容器顶级
+        this.container.appendChild(node);
+    }
+    /**
+     * 渲染单个连线
+     */
+    renderEdge(data) {
+        const edge = document.createElement('mop-edge');
+
+        // 设置属性
+        edge.setAttribute('id', data.id);
+        edge.setAttribute('points', data.points || '');
+        if (data.color) edge.setAttribute('color', data.color);
+        if (data.label) edge.setAttribute('label', data.label);
+        if (data.labelT !== undefined) edge.setAttribute('label-t', data.labelT);
+        if (data.animated) edge.setAttribute('animated', 'true');
+        if (data.selected) edge.setAttribute('selected', 'true');
+
+        // 挂载到主画布 (连线总是全局坐标)
+        this.container.appendChild(edge);
     }
 }
