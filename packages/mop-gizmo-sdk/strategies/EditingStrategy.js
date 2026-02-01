@@ -13,123 +13,136 @@ export class EditingStrategy extends BaseStrategy {
 
     /**
      * Activate Editing Mode
-     * @param {string} nodeId 
+     * @param {string|Object} payload - NodeId string OR { type: 'edge', id, t } object
      */
-    activate(nodeId) {
-        if (!nodeId) return;
+    activate(payload) {
+        if (!payload) return;
 
-        console.log('[EditingStrategy] Activating for:', nodeId);
-        this.activeNodeId = nodeId;
+        const isEdge = typeof payload === 'object' && payload.type === 'edge';
+        const targetId = isEdge ? payload.id : payload;
+
+        console.log(`[EditingStrategy] Activating for ${isEdge ? 'Edge' : 'Node'}:`, targetId);
+        this.activeNodeId = targetId;
+        this.activeType = isEdge ? 'edge' : 'node';
+        this.activeT = isEdge ? payload.t : null;
+
         const editor = this.manager.editorView;
 
-        // 1. Find the Node Element
-        const nodeEl = editor.container.querySelector(`mop-node[id="${nodeId}"]`);
-        if (!nodeEl) {
-            console.warn('[EditingStrategy] Node element not found');
+        // 1. Find the Element
+        const query = isEdge ? `mop-edge[id="${targetId}"]` : `mop-node[id="${targetId}"]`;
+        const el = editor.container.querySelector(query);
+        if (!el) {
+            console.warn('[EditingStrategy] Target element not found:', query);
             return;
+        }
+
+        // 2. Determine Coordinates
+        let x, y, width, height, color, fontSize, textAlign;
+
+        if (isEdge) {
+            // Edge logic: Get center from component's path logic
+            const center = el.getPathPoint(this.activeT);
+            x = center.x;
+            y = center.y;
+            width = 120; // Default editing width for labels
+            height = 24;
+            color = '#334155';
+            fontSize = '12px';
+            textAlign = 'center';
+        } else {
+            // Node logic: Existing computed style sync
+            const computed = window.getComputedStyle(el);
+            x = parseFloat(el.style.left);
+            y = parseFloat(el.style.top);
+            width = parseFloat(el.style.width);
+            height = parseFloat(el.style.height);
+            color = computed.color;
+            fontSize = computed.fontSize;
+            textAlign = computed.textAlign;
         }
 
         // 3. Create Phantom Textarea
         const input = document.createElement('textarea');
         this.activeInput = input;
+        input.value = this.getLabel(targetId, this.activeType);
 
-        // 4. Style Sync (The "Invisible" Magic)
-        const computed = window.getComputedStyle(nodeEl);
-
-        input.value = this.getNodeLabel(nodeId); // Get current text
-
+        // 4. Style Sync
         input.style.position = 'absolute';
-        input.style.left = nodeEl.style.left;
-        input.style.top = nodeEl.style.top;
-        input.style.width = nodeEl.style.width;
-        input.style.height = nodeEl.style.height;
+        input.style.left = isEdge ? (x - width / 2) + 'px' : x + 'px';
+        input.style.top = isEdge ? (y - height / 2) + 'px' : y + 'px';
+        input.style.width = width + 'px';
+        input.style.height = height + 'px';
 
-        // Copy Typography
-        input.style.fontFamily = computed.fontFamily;
-        input.style.fontSize = computed.fontSize;
-        input.style.lineHeight = computed.lineHeight;
-        input.style.fontWeight = computed.fontWeight;
-        input.style.textAlign = computed.textAlign;
-        input.style.color = computed.color;
-        input.style.padding = computed.padding;
+        input.style.fontFamily = "'Inter', sans-serif";
+        input.style.fontSize = fontSize;
+        input.style.textAlign = textAlign;
+        input.style.color = color;
+        input.style.padding = '4px';
 
-        // Visuals
-        input.style.background = 'white'; // Opaque to hide underlying text
-        input.style.border = '2px solid #1890ff'; // Focus state
-        input.style.zIndex = '3000'; // Above everything (even Gizmos)
+        input.style.background = 'white';
+        input.style.border = '2px solid #3b82f6';
+        input.style.borderRadius = isEdge ? '12px' : '4px';
+        input.style.zIndex = '3000';
         input.style.resize = 'none';
         input.style.overflow = 'hidden';
         input.style.outline = 'none';
         input.style.boxSizing = 'border-box';
 
-        // 5. Append to Gizmo Layer
         const layer = document.getElementById('mop-gizmo-layer') || this.manager.container;
         if (layer) layer.appendChild(input);
 
-        // 6. Focus & Select
         input.focus();
         input.select();
 
-        // 7. Bind Events
         input.onblur = () => this.commit();
         input.onkeydown = (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) { // Shift+Enter for newline
-                e.preventDefault();
-                this.commit();
-            }
-            if (e.key === 'Escape') {
-                this.cancel();
-            }
-            e.stopPropagation(); // Standard practice: Don't trigger other shortcuts
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.commit(); }
+            if (e.key === 'Escape') this.cancel();
+            e.stopPropagation();
         };
     }
 
-    /**
-     * Helper to get text from data model
-     */
-    getNodeLabel(nodeId) {
-        const node = this.manager.editorView.graphData.nodes.find(n => n.id === nodeId);
-        return node ? (node.label || 'New Node') : '';
+    getLabel(id, type) {
+        const editor = this.manager.editorView;
+        if (type === 'edge') {
+            const edge = editor.graphData.edges.find(e => e.id === id);
+            return edge ? (edge.label || '') : '';
+        } else {
+            const node = editor.graphData.nodes.find(n => n.id === id);
+            return node ? (node.label || 'New Node') : '';
+        }
     }
 
     commit() {
         if (!this.activeInput || !this.activeNodeId) return;
-
         const newValue = this.activeInput.value;
-        console.log('[EditingStrategy] Committing:', newValue);
+        const editor = this.manager.editorView;
 
-        // Update Data - Expects editorView.updateNode(id, data)
-        if (this.manager.editorView.updateNode) {
-            this.manager.editorView.updateNode(this.activeNodeId, { label: newValue });
+        if (this.activeType === 'edge') {
+            editor.updateEdge(this.activeNodeId, { label: newValue, labelT: this.activeT });
         } else {
-            console.error('[EditingStrategy] EditorView missing updateNode method');
+            editor.updateNode(this.activeNodeId, { label: newValue });
         }
 
         this.cleanup();
     }
 
     cancel() {
-        console.log('[EditingStrategy] Cancelled');
         this.cleanup();
     }
 
     cleanup() {
         const input = this.activeInput;
-        // Nullify first to prevent re-entrant calls from blur events
         this.activeInput = null;
         this.activeNodeId = null;
+        this.activeType = null;
+        this.activeT = null;
 
         if (input) {
-            // Unbind listeners first
             input.onblur = null;
             input.onkeydown = null;
-
-            // Safe removal
-            if (input.parentNode) {
-                input.remove();
-            }
+            if (input.parentNode) input.remove();
         }
-
         this.manager.deactivateStrategy();
     }
 }
