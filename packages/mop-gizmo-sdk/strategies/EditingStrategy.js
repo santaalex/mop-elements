@@ -1,4 +1,4 @@
-import { BaseStrategy } from 'https://cdn.jsdelivr.net/gh/santaalex/mop-elements@main/interactions/strategies/BaseStrategy.js';
+import { BaseStrategy } from '../../../../interactions/strategies/BaseStrategy.js';
 
 export class EditingStrategy extends BaseStrategy {
     constructor(manager) {
@@ -13,44 +13,63 @@ export class EditingStrategy extends BaseStrategy {
 
     /**
      * Activate Editing Mode
-     * @param {string|Object} payload - NodeId string OR { type: 'edge', id, t } object
+     * @param {string|Object} payload - NodeId string OR { type: 'edge', id, t } OR { type: 'lane', id }
      */
     activate(payload) {
         if (!payload) return;
 
         const isEdge = typeof payload === 'object' && payload.type === 'edge';
-        const targetId = isEdge ? payload.id : payload;
+        const isLane = typeof payload === 'object' && payload.type === 'lane';
+        const targetId = (isEdge || isLane) ? payload.id : payload;
 
-        console.log(`[EditingStrategy] Activating for ${isEdge ? 'Edge' : 'Node'}:`, targetId);
+        console.log(`[EditingStrategy] Activating for ${isLane ? 'Lane' : (isEdge ? 'Edge' : 'Node')}:`, targetId);
         this.activeNodeId = targetId;
-        this.activeType = isEdge ? 'edge' : 'node';
+        this.activeType = isLane ? 'lane' : (isEdge ? 'edge' : 'node');
         this.activeT = isEdge ? payload.t : null;
 
         const editor = this.manager.editorView;
 
         // 1. Find the Element
-        const query = isEdge ? `mop-edge[id="${targetId}"]` : `mop-node[id="${targetId}"]`;
+        let query;
+        if (isLane) query = `mop-lane[id="${targetId}"]`;
+        else if (isEdge) query = `mop-edge[id="${targetId}"]`;
+        else query = `mop-node[id="${targetId}"]`;
+
         const el = editor.container.querySelector(query);
         if (!el) {
             console.warn('[EditingStrategy] Target element not found:', query);
             return;
         }
 
-        // 2. Determine Coordinates
-        let x, y, width, height, color, fontSize, textAlign;
+        // 2. Determine Coordinates and Styles
+        let x, y, width, height, color, fontSize, textAlign, writingMode = 'horizontal-tb', letterSpacing = 'normal';
 
-        if (isEdge) {
-            // Edge logic: Get center from component's path logic
+        if (isLane) {
+            const headerRect = el.getHeaderRect();
+            const sceneRect = this.manager.container.getBoundingClientRect();
+            const scale = editor.viewport.state.scale;
+
+            // Coordinate transform: Screen to Scene
+            x = (headerRect.left - sceneRect.left) / scale;
+            y = (headerRect.top - sceneRect.top) / scale;
+            width = headerRect.width / scale;
+            height = headerRect.height / scale;
+
+            color = el.getAttribute('color') || '#6366f1';
+            fontSize = '14px';
+            textAlign = 'center';
+            writingMode = 'vertical-rl';
+            letterSpacing = '4px';
+        } else if (isEdge) {
             const center = el.getPathPoint(this.activeT);
             x = center.x;
             y = center.y;
-            width = 120; // Default editing width for labels
+            width = 120;
             height = 24;
             color = '#334155';
             fontSize = '12px';
             textAlign = 'center';
         } else {
-            // Node logic: Existing computed style sync
             const computed = window.getComputedStyle(el);
             x = parseFloat(el.style.left);
             y = parseFloat(el.style.top);
@@ -68,7 +87,9 @@ export class EditingStrategy extends BaseStrategy {
 
         // 4. Style Sync
         input.style.position = 'absolute';
-        input.style.left = isEdge ? (x - width / 2) + 'px' : x + 'px';
+        input.style.left = (isEdge || isLane) ? (x) + 'px' : x + 'px';
+        if (isEdge) input.style.left = (x - width / 2) + 'px'; // Edge is centered
+
         input.style.top = isEdge ? (y - height / 2) + 'px' : y + 'px';
         input.style.width = width + 'px';
         input.style.height = height + 'px';
@@ -78,6 +99,13 @@ export class EditingStrategy extends BaseStrategy {
         input.style.textAlign = textAlign;
         input.style.color = color;
         input.style.padding = '4px';
+        input.style.writingMode = writingMode;
+        if (writingMode === 'vertical-rl') {
+            input.style.textOrientation = 'upright';
+            input.style.letterSpacing = letterSpacing;
+            input.style.fontWeight = '700';
+            input.style.paddingTop = '10px';
+        }
 
         input.style.background = 'white';
         input.style.border = '2px solid #3b82f6';
@@ -104,7 +132,10 @@ export class EditingStrategy extends BaseStrategy {
 
     getLabel(id, type) {
         const editor = this.manager.editorView;
-        if (type === 'edge') {
+        if (type === 'lane') {
+            const lane = editor.graphData.lanes.find(l => l.id === id);
+            return lane ? (lane.name || '') : '';
+        } else if (type === 'edge') {
             const edge = editor.graphData.edges.find(e => e.id === id);
             return edge ? (edge.label || '') : '';
         } else {
@@ -118,7 +149,9 @@ export class EditingStrategy extends BaseStrategy {
         const newValue = this.activeInput.value;
         const editor = this.manager.editorView;
 
-        if (this.activeType === 'edge') {
+        if (this.activeType === 'lane') {
+            editor.updateLane(this.activeNodeId, { name: newValue });
+        } else if (this.activeType === 'edge') {
             editor.updateEdge(this.activeNodeId, { label: newValue, labelT: this.activeT });
         } else {
             editor.updateNode(this.activeNodeId, { label: newValue });
