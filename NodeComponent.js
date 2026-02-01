@@ -61,6 +61,7 @@ export class MoPNode extends HTMLElement {
                     user-select: none;
                     filter: drop-shadow(0 4px 6px rgba(0,0,0,0.05));
                     transition: transform 0.2s;
+                    z-index: 100; /* Ensure Nodes are above Edges */
                 }
                 :host(:hover) { transform: scale(1.02); }
                 
@@ -104,12 +105,51 @@ export class MoPNode extends HTMLElement {
                     100% { opacity: 1; }
                 }
                 .anim-pulse { animation: pulse 2s infinite ease-in-out; }
+
+                /* --- Ports (Connectors) --- */
+                .port {
+                    position: absolute;
+                    width: 12px;
+                    height: 12px;
+                    background: #fff;
+                    border: 2px solid #6366f1;
+                    border-radius: 50%;
+                    cursor: crosshair;
+                    z-index: 10;
+                    
+                    /* High-Star Logic: Opacity controlled by Global Mode */
+                    opacity: 0; 
+                    /* display: block;  Always layout, just hide visual */
+                    
+                    transition: opacity 0.2s, transform 0.2s;
+                    box-sizing: border-box;
+                }
+                :host(:hover) .port {
+                    /* Only show if Global Mode allows (EDIT=1, VIEW=0) */
+                    opacity: var(--port-hover-opacity, 0);
+                }
+                .port:hover {
+                    transform: translate(-50%, -50%) scale(1.3);
+                    background: #6366f1; /* Active State */
+                }
+
+                /* Positioning */
+                .port-n { left: 50%; top: 0; transform: translate(-50%, -50%); }
+                .port-e { left: 100%; top: 50%; transform: translate(-50%, -50%); }
+                .port-s { left: 50%; top: 100%; transform: translate(-50%, -50%); }
+                .port-w { left: 0; top: 50%; transform: translate(-50%, -50%); }
             </style>
 
             <div class="node-container">
                 <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="visible">
                     ${this.getTemplate(type, w, h, color, label, kpi)}
                 </svg>
+                
+                <!-- Ports -->
+                <div class="port port-n" data-port="top"></div>
+                <div class="port port-e" data-port="right"></div>
+                <div class="port port-s" data-port="bottom"></div>
+                <div class="port port-w" data-port="left"></div>
             </div>
         `;
     }
@@ -188,12 +228,14 @@ export class MoPNode extends HTMLElement {
     getAnchors() {
         const w = this.offsetWidth;
         const h = this.offsetHeight;
+        // Direction vectors for Manhattan routing: 
+        // [1,0] = Right, [-1,0] = Left, [0,1] = Bottom, [0,-1] = Top
         return {
-            top: { x: w / 2, y: 0 },
-            right: { x: w, y: h / 2 },
-            bottom: { x: w / 2, y: h },
-            left: { x: 0, y: h / 2 },
-            center: { x: w / 2, y: h / 2 }
+            top: { x: w / 2, y: 0, dir: [0, -1] },
+            right: { x: w, y: h / 2, dir: [1, 0] },
+            bottom: { x: w / 2, y: h, dir: [0, 1] },
+            left: { x: 0, y: h / 2, dir: [-1, 0] },
+            center: { x: w / 2, y: h / 2, dir: [0, 0] }
         };
     }
 }

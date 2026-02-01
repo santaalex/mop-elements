@@ -1,54 +1,109 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Goldmine V3 - 流程挖掘平台</title>
-    <!-- Tailwind CSS (Dev Mode) -->
+    <title>MoP Editor - Graph Interaction SDK</title>
+    <!-- TW Script for dynamic prototyping -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono&display=swap"
+        rel="stylesheet">
     <style>
-        body {
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
             font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            background: #f8fafc;
         }
 
-        /* Glassmorphism Utilities */
-        .glass-card {
-            background: rgba(255, 255, 255, 0.7);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.5);
-            border-radius: 1rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        #app {
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* High Star UI Details */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
         }
     </style>
 </head>
 
 <body>
-    <!-- App Container -->
-    <div id="app" class="min-h-screen bg-slate-50 flex items-center justify-center text-slate-800 font-inter">
-        <!-- Content will be injected by Router -->
-        <div class="text-slate-400 animate-pulse">Loading Goldmine V3...</div>
-    </div>
+    <!-- CRITICAL: ID must be 'app' to match Router.js -->
+    <div id="app"></div>
 
-    <!-- Main Logic -->
+    <!-- Import Map: Centralized Dependency Management -->
+    <script type="importmap">
+    {
+        "imports": {
+            "./AuthService.js": "./AuthService.js",
+            "./MingdaoBaseService.js": "./MingdaoBaseService.js",
+            "./config.js": "./config.js",
+            
+            "mop-viewport": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@c6b4d2fc171ed8688c890d25fb4ea0bfdcc74572/ViewportEngine.js",
+            "mop-renderer": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@c6b4d2fc171ed8688c890d25fb4ea0bfdcc74572/CanvasRenderer.js",
+            "mop-lane": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@c6b4d2fc171ed8688c890d25fb4ea0bfdcc74572/LaneComponent.js",
+            "mop-node": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@c6b4d2fc171ed8688c890d25fb4ea0bfdcc74572/NodeComponent.js",
+            "mop-edge": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@c6b4d2fc171ed8688c890d25fb4ea0bfdcc74572/EdgeComponent.js",
+            "mop-interaction-sdk": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@c6b4d2fc171ed8688c890d25fb4ea0bfdcc74572/packages/mop-interaction-sdk/HitTest.js",
+            "mop-drag-sdk": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@c6b4d2fc171ed8688c890d25fb4ea0bfdcc74572/packages/mop-drag-sdk/NodeDragStrategy.js",
+            "mop-gizmo-sdk": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@c6b4d2fc171ed8688c890d25fb4ea0bfdcc74572/packages/mop-gizmo-sdk/GizmoRenderer.js",
+            "mop-selection-strategy": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@c6b4d2fc171ed8688c890d25fb4ea0bfdcc74572/packages/mop-gizmo-sdk/strategies/SelectionStrategy.js",
+            "mop-editing-strategy": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@c6b4d2fc171ed8688c890d25fb4ea0bfdcc74572/packages/mop-gizmo-sdk/strategies/EditingStrategy.js"
+        }
+    }
+    </script>
+
     <script type="module">
         import { Router } from './Router.js';
         import { LoginView } from './LoginView.js';
         import { DashboardView } from './DashboardView.js';
         import { EditorView } from './EditorView.js';
+        import { ProjectService } from './ProjectService.js';
 
-        // Define Routes
+        // LOCAL IMPORT: Gizmo SDK (Patched)
+        import { GizmoRenderer } from 'mop-gizmo-sdk';
+
+        import { CanvasRenderer } from 'mop-renderer';
+        import { InteractionManager } from './interactions/InteractionManager.js';
+        import { ViewportEngine } from 'mop-viewport';
+        import { LayoutConfig } from './LayoutConfig.js';
+
+        // Critical: Import Atomic Components to register Custom Elements
+        import "mop-viewport";
+        import "mop-lane";
+        import "mop-node";
+        import "mop-edge";
+        import "mop-renderer";
+
+        // Initialize Router with View Instances
         const routes = {
             'login': new LoginView(),
             'dashboard': new DashboardView(),
             'editor': new EditorView()
         };
 
-        // Initialize Router
-        console.log('[App] Initializing Router...');
+        // Root entry
         const router = new Router(routes);
+        window.router = router; // Expose for interactions
     </script>
 </body>
 

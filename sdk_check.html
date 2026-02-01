@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SDK Link Verification</title>
+    <style>
+        body { font-family: ui-monospace, monospace; padding: 20px; background: #f0f2f5; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .status { font-weight: bold; }
+        .success { color: green; }
+        .error { color: red; }
+        h2 { margin-top: 0; }
+        pre { background: #f8fafc; padding: 10px; border-radius: 4px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>🛠️ SDK Verification Check</h2>
+        <p>Checking if local modules correctly link to CDN...</p>
+        <div id="results"></div>
+    </div>
+
+    <script type="module">
+        const resultsEl = document.getElementById('results');
+        
+        function log(msg, type = 'neutral') {
+            const div = document.createElement('div');
+            div.textContent = msg;
+            div.className = type === 'success' ? 'success' : (type === 'error' ? 'error' : '');
+            div.style.marginBottom = '5px';
+            resultsEl.appendChild(div);
+        }
+
+        async function checkModule(name, path) {
+            try {
+                log(`Testing ${name}...`);
+                const module = await import(path);
+                if (module[name] || module.default) {
+                    log(`✅ ${name} Loaded Successfully!`, 'success');
+                    console.log(`${name} exports:`, module);
+                } else {
+                    log(`❓ ${name} Loaded but export missing? (${Object.keys(module)})`, 'error');
+                }
+            } catch (e) {
+                log(`❌ ${name} Failed: ${e.message}`, 'error');
+                console.error(e);
+            }
+        }
+
+        // Test the LOCAL files, which should redirect to CDN
+        async function runTests() {
+            // 1. GizmoRenderer (Directly from CDN via EditorView is hard to test in isolation, 
+            // so we test the CDN URL directly here to prove it's reachable)
+            await checkModule('GizmoRenderer', 'https://cdn.jsdelivr.net/gh/santaalex/mop-elements@main/packages/mop-gizmo-sdk/GizmoRenderer.js');
+
+            // 2. Local Wrappers (Requires local server to verify imports, assumption: user running via simple server)
+            // We just test the CDN URLs for strategies too, to verify the "Cloud" side.
+            // Verifying "Local Bridge" requires running THIS file in the same context.
+            await checkModule('EditingStrategy', 'https://cdn.jsdelivr.net/gh/santaalex/mop-elements@main/packages/mop-gizmo-sdk/strategies/EditingStrategy.js');
+            await checkModule('SelectionStrategy', 'https://cdn.jsdelivr.net/gh/santaalex/mop-elements@main/packages/mop-gizmo-sdk/strategies/SelectionStrategy.js');
+            await checkModule('NodeDragStrategy', 'https://cdn.jsdelivr.net/gh/santaalex/mop-elements@main/packages/mop-drag-sdk/NodeDragStrategy.js');
+
+            log('---');
+            log('🎉 If all above are green, your CDN environment is READY.');
+        }
+
+        runTests();
+    </script>
+</body>
+</html>

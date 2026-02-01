@@ -1,5 +1,5 @@
 // Remote Import (Cloud Native)
-import { MingdaoAuthSDK } from 'https://cdn.jsdelivr.net/gh/santaalex/mop-elements/MingdaoAuthSDK.js';
+import { MingdaoAuthSDK } from 'https://cdn.jsdelivr.net/gh/santaalex/mop-elements@c6b4d2fc171ed8688c890d25fb4ea0bfdcc74572/MingdaoAuthSDK.js';
 import { ENV_CONFIG } from './config.js';
 export const CONFIG = {
     // 你的工作表 ID

@@ -275,7 +275,7 @@ export class DashboardView {
         }
 
         container.innerHTML = this.projects.map(p => `
-            <div class="project-card group bg-white rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.08)] hover:shadow-[0_12px_40px_rgba(0,0,0,0.12)] border border-slate-200 hover:border-blue-300 transition-all duration-300 hover:-translate-y-1 cursor-pointer overflow-hidden relative">
+            <div class="project-card group bg-white rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.08)] hover:shadow-[0_12px_40px_rgba(0,0,0,0.12)] border border-slate-200 hover:border-blue-300 transition-all duration-300 hover:-translate-y-1 cursor-pointer overflow-hidden relative" onclick="window.location.hash='#/editor/${p.id}'">
                 <!-- Action Menu Trigger (GitHub Style) -->
                 <button class="btn-more-options absolute top-3 right-3 w-8 h-8 flex items-center justify-center rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all z-20" data-id="${p.id}" title="更多操作">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>

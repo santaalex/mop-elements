@@ -38,8 +38,8 @@ export class Router {
         // Simple matching for now
 
         if (hash.startsWith('#/editor')) {
-            const projectId = hash.split('/')[2];
-            this.render('editor', { projectId });
+            const id = hash.split('/')[2];
+            this.render('editor', { id });
         } else if (hash.startsWith('#/dashboard')) {
             this.render('dashboard');
         } else {
@@ -48,12 +48,23 @@ export class Router {
     }
 
     async render(routeName, params = {}) {
-        if (this.routes[routeName]) {
-            // Unmount previous view if needed? (Simple generic innerHTML for now)
-            this.appContainer.innerHTML = '';
+        const view = this.routes[routeName];
+        if (!view) return;
 
-            // Render new view
-            const view = this.routes[routeName];
+        // Pattern A: Mount (Container-First) - Used by EditorView
+        // This is the modern pattern where the view takes control of the container.
+        if (typeof view.mount === 'function') {
+            // Clear container first? Usually mount handles it, but let's ensure clean slate if needed.
+            // But EditorView replaces innerHTML, so it's fine.
+            await view.mount(this.appContainer, params);
+            return;
+        }
+
+        // Pattern B: Render (String/Element-First) - Used by Login/Dashboard
+        // This is the legacy pattern where router orchestrates placement.
+        if (typeof view.render === 'function') {
+            this.appContainer.innerHTML = ''; // Start clean
+
             const content = await view.render(params);
 
             if (typeof content === 'string') {
@@ -63,8 +74,8 @@ export class Router {
             }
 
             // Execute afterRender hook if available
-            if (view.afterRender) {
-                view.afterRender(params);
+            if (typeof view.afterRender === 'function') {
+                await view.afterRender(params);
             }
         }
     }
