@@ -20,6 +20,11 @@ export class InteractionManager {
         // Default to VIEW for safety, User/Parent will switch to EDIT
         this.mode = 'VIEW';
 
+        // Click vs DblClick Debounce Timer (High-Star Best Practice: 250ms)
+        // 点击与双击防抖定时器（高星最佳实践：250ms）
+        this.clickTimer = null;
+        this.CLICK_DELAY = 250; // Standard delay for click/dblclick differentiation
+
         // Strategy Registry
         this.strategies = {
             nodeDrag: new NodeDragStrategy(this),
@@ -149,6 +154,10 @@ export class InteractionManager {
 
             console.log(`%c[用户交互] 对象: ${typeName} #${id}, 动作: 双击, 状态: ${modeName}`, `color: ${logColor}; font-weight: bold;`);
 
+            // CRITICAL: Cancel any pending click timer (High-Star Best Practice)
+            // 关键：取消任何待处理的点击定时器（高星最佳实践）
+            clearTimeout(this.clickTimer);
+
             // --- VIEW MODE GUARD ---
             if (this.mode === 'VIEW') {
                 if (type === 'node') {
@@ -169,6 +178,19 @@ export class InteractionManager {
                 }
                 // 2. Node
                 else if (type === 'node') {
+                    // ✅ Activity 节点短路逻辑 (参考 Excalidraw 70k⭐)
+                    // Activity nodes should drill down instead of editing name
+                    const nodeEl = document.getElementById(id);
+                    const nodeType = nodeEl?.getAttribute('type');
+
+                    if (nodeType === 'activity') {
+                        console.log(`[交互管理器] ✅ Activity 节点双击 → 触发下钻 (Drill Down)`);
+                        // 触发业务逻辑，跳过编辑策略
+                        this.emit('node:dblclick', { id, nativeEvent: e });
+                        return; // 短路，不执行后续编辑
+                    }
+
+                    // 普通节点才激活编辑策略
                     this.activateStrategy(this.strategies.editing, id);
                 }
                 // 3. Edge
@@ -291,14 +313,33 @@ export class InteractionManager {
             e.semanticType = result.bestTarget.type;
             e.semanticId = result.bestTarget.id;
 
-            // --- Phase 2: View Mode Logic ---
-            // If in VIEW mode, we primarily emit events and BLOCK physics strategies (except Hover/Select if needed)
-            if (this.mode === 'VIEW') {
-                if (e.semanticType === 'node') {
-                    console.log(`[交互管理器] 浏览模式触发: 节点点击 (Node Click) -> ${e.semanticId}`);
+            // --- Phase 2: High-Star Best Practice - Dual-Track Mode Strategy ---
+            // VIEW Mode: Read-only, emit events, block physics
+            // EDIT Mode: Full editing + Information access (Figma/Excalidraw pattern)
+            // 高星最佳实践 - 双轨模式策略：编辑模式不阻止信息查看
+
+            if (e.semanticType === 'node') {
+                console.log(`[交互管理器] ${this.mode === 'VIEW' ? '浏览' : '编辑'}模式触发: 节点点击 (Node Click) -> ${e.semanticId}`);
+
+                // Clear any pending click timer (double-click will cancel single-click)
+                // 清除待处理的点击定时器（双击将取消单击）
+                clearTimeout(this.clickTimer);
+
+                // Delay click event emission to differentiate from dblclick (250ms standard)
+                // 延迟点击事件发出以区分双击（250ms 标准）
+                this.clickTimer = setTimeout(() => {
+                    // ✅ Both modes emit business events for sidebar/info panels
+                    // ✅ 两种模式都发出业务事件用于侧边栏/信息面板
                     this.emit('node:click', { id: e.semanticId, nativeEvent: e });
-                    return; // STOP! Do not convert to Drag in View Mode
+                }, this.CLICK_DELAY);
+
+                // VIEW mode stops here (no physics)
+                // 浏览模式在此停止（无物理交互）
+                if (this.mode === 'VIEW') {
+                    return;
                 }
+                // EDIT mode continues to physics strategies below
+                // 编辑模式继续执行下方的物理策略（拖动、Gizmo等）
             }
 
         } else {

@@ -175,7 +175,7 @@ class MoPEdge extends HTMLElement {
                 position: absolute;
                 top: 0; left: 0; width: 100%; height: 100%;
                 overflow: visible;
-                z-index: 10;
+                z-index: calc(var(--z-canvas) - 1); /* Below nodes / 节点下方 */
             }
             svg { width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 

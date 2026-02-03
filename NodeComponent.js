@@ -63,7 +63,7 @@ export class MoPNode extends HTMLElement {
                     user-select: none;
                     filter: drop-shadow(0 4px 6px rgba(0,0,0,0.05));
                     transition: transform 0.2s;
-                    z-index: 100; /* Ensure Nodes are above Edges */
+                    z-index: var(--z-canvas); /* Standard Canvas Layer / 标准画布层 */
                 }
                 :host(:hover) { transform: scale(1.02); }
                 
@@ -117,7 +117,7 @@ export class MoPNode extends HTMLElement {
                     border: 2px solid #6366f1;
                     border-radius: 50%;
                     cursor: crosshair;
-                    z-index: 10;
+                    z-index: 2; /* Local stacking inside component / 组件内局部层叠 */
                     
                     /* High-Star Logic: Opacity controlled by Global Mode */
                     opacity: 0; 

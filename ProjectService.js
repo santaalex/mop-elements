@@ -2,6 +2,10 @@ import { ENV_CONFIG } from './config.js';
 import { MingdaoBaseService } from './MingdaoBaseService.js';
 
 export class ProjectService extends MingdaoBaseService {
+    constructor() {
+        super();
+        this.ENV_CONFIG = ENV_CONFIG;
+    }
 
     /**
      * Get Projects List
@@ -95,6 +99,7 @@ export class ProjectService extends MingdaoBaseService {
                     desc: row[ENV_CONFIG.FIELDS.PROJ_DESC],
                     version: row[ENV_CONFIG.FIELDS.PROJ_VER],
                     canvasData: row[ENV_CONFIG.FIELDS.CANVAS_DATA] || JSON.stringify({ version: "3.0", lanes: [], nodes: [] }),
+                    matrixData: row[ENV_CONFIG.FIELDS.MATRIX_DATA] || JSON.stringify({ roles: {}, assignments: [] }), // <--- New Field
                     updatedAt: updatedStr,
                     owner: ownerName,
                     parent: parentInfo // <--- New Field
@@ -122,6 +127,7 @@ export class ProjectService extends MingdaoBaseService {
             { id: ENV_CONFIG.FIELDS.PROJ_CODE, value: 'P-' + Date.now().toString().slice(-6) },
             { id: ENV_CONFIG.FIELDS.PROJ_VER, value: '1.0.0' },
             { id: ENV_CONFIG.FIELDS.CANVAS_DATA, value: JSON.stringify({ version: "3.0", lanes: [], nodes: [] }) },
+            { id: ENV_CONFIG.FIELDS.MATRIX_DATA, value: JSON.stringify({ roles: {}, assignments: [] }) }, // <--- New Field
             // Manual Metadata
             { id: ENV_CONFIG.FIELDS.PROJ_CREATOR, value: creatorName },
             { id: ENV_CONFIG.FIELDS.PROJ_DATE, value: dateStr }
@@ -172,6 +178,33 @@ export class ProjectService extends MingdaoBaseService {
             { id: ENV_CONFIG.FIELDS.PROJ_DESC, value: desc }
         ];
         const res = await this.updateRow(ENV_CONFIG.WORKSHEET_ID, rowId, fields);
+        return res;
+    }
+
+    /**
+     * Save Project (graphData + matrixData)
+     * 推荐高星实践：原子性保存（Figma模式）
+     */
+    async saveProject(rowId, graphData, matrixData) {
+        const fields = [
+            { id: ENV_CONFIG.FIELDS.CANVAS_DATA, value: JSON.stringify(graphData) },
+            { id: ENV_CONFIG.FIELDS.MATRIX_DATA, value: JSON.stringify(matrixData) }
+        ];
+
+        console.log('[ProjectService] Saving project...', {
+            rowId,
+            graphDataSize: JSON.stringify(graphData).length,
+            matrixDataSize: JSON.stringify(matrixData).length
+        });
+
+        const res = await this.updateRow(ENV_CONFIG.WORKSHEET_ID, rowId, fields);
+
+        if (res.success) {
+            console.log('✅ [ProjectService] Project saved successfully');
+        } else {
+            console.error('❌ [ProjectService] Save failed:', res);
+        }
+
         return res;
     }
 }

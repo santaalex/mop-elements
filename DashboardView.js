@@ -16,7 +16,7 @@ export class DashboardView {
         return `
             <div class="min-h-screen bg-slate-50 pt-12 pb-20">
                 <!-- Navigation / Header Bar -->
-                <div class="fixed top-0 left-0 right-0 bg-white/80 backdrop-blur-md border-b border-slate-200 z-40 h-16 flex items-center justify-center">
+                <div class="fixed top-0 left-0 right-0 bg-white/80 backdrop-blur-md border-b border-slate-200 z-[var(--z-shell)] h-16 flex items-center justify-center">
                     <div class="w-full max-w-7xl px-6 flex justify-between items-center">
                          <div class="flex items-center gap-3">
                             <div class="w-8 h-8 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-500/20">
@@ -59,7 +59,7 @@ export class DashboardView {
                 </div>
 
                 <!-- New Project Modal -->
-                <div id="newProjectModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center hidden z-50 transition-opacity opacity-0">
+                <div id="newProjectModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center hidden z-[var(--z-modal)] transition-opacity opacity-0">
                     <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md border border-slate-100 transform scale-95 transition-transform" id="modalContent">
                         <h3 class="text-2xl font-bold text-slate-800 mb-2">创建新项目</h3>
                         <p class="text-slate-500 mb-8 text-sm">为您的新流程起个名字，之后可以随时更改。</p>
@@ -75,7 +75,7 @@ export class DashboardView {
                 </div>
 
                 <!-- Edit Project Modal -->
-                <div id="editProjectModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center hidden z-50 transition-opacity opacity-0">
+                <div id="editProjectModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center hidden z-[var(--z-modal)] transition-opacity opacity-0">
                     <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-lg border border-slate-100 transform scale-95 transition-transform" id="editModalContent">
                         <h3 class="text-2xl font-bold text-slate-800 mb-6">编辑项目信息</h3>
                         <div class="space-y-6 mb-8">
@@ -96,7 +96,7 @@ export class DashboardView {
                 </div>
 
                 <!-- Delete Project Modal (GitHub Style) -->
-                <div id="deleteProjectModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-md flex items-center justify-center hidden z-50 transition-opacity opacity-0">
+                <div id="deleteProjectModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-md flex items-center justify-center hidden z-[var(--z-modal)] transition-opacity opacity-0">
                     <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md border border-red-100 transform scale-95 transition-transform" id="deleteModalContent">
                         <div class="flex items-center gap-3 text-red-600 mb-4">
                             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>

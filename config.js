@@ -26,6 +26,7 @@ export const ENV_CONFIG = {
         PROJ_VER: 'dsl_version',
         // Critical Missing Field
         CANVAS_DATA: 'canvas_data',
+        MATRIX_DATA: 'matrixData',       // ✅ 新增L3矩阵数据字段
         // Manual Metadata (Optional but Recommended)
         PROJ_CREATOR: 'creator_name',    // 文本/Member
         PROJ_DATE: 'created_at',         // 文本/Date

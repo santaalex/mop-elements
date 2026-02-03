@@ -1,10 +1,29 @@
 {
     "imports": {
-        "@mop/metric-sdk": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.1/packages/mop-metric-sdk/MetricCore.js",
-        "@mop/inspector-sdk/": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.1/packages/mop-inspector-sdk/",
-        "@mop/matrix-sdk/": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.1/packages/mop-matrix-sdk/",
-        "@mop/gizmo-sdk": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.1/packages/mop-gizmo-sdk/index.js",
-        "@mop/drag-sdk": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.1/packages/mop-drag-sdk/index.js",
-        "@mop/interaction-sdk": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.1/packages/mop-interaction-sdk/index.js"
+        "@mop/metric-sdk": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.2/packages/mop-metric-sdk/MetricCore.js",
+        "@mop/inspector-sdk/": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.2/packages/mop-inspector-sdk/",
+        "@mop/matrix-sdk/": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.2/packages/mop-matrix-sdk/",
+        "@mop/gizmo-sdk": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.2/packages/mop-gizmo-sdk/index.js",
+        "@mop/drag-sdk": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.2/packages/mop-drag-sdk/index.js",
+        "@mop/interaction-sdk": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.2/packages/mop-interaction-sdk/index.js",
+        "./EditorView.js": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.2/EditorView.js",
+        "./CanvasRenderer.js": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.2/CanvasRenderer.js",
+        "./DashboardView.js": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.2/DashboardView.js",
+        "./LoginView.js": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.2/LoginView.js",
+        "./Router.js": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.2/Router.js",
+        "./ProjectService.js": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.2/ProjectService.js",
+        "./AuthService.js": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.2/AuthService.js",
+        "./MingdaoBaseService.js": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.2/MingdaoBaseService.js",
+        "./MingdaoAuthSDK.js": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.2/MingdaoAuthSDK.js",
+        "./components/": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.2/components/",
+        "./NodeComponent.js": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.2/NodeComponent.js",
+        "./EdgeComponent.js": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.2/EdgeComponent.js",
+        "./LaneComponent.js": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.2/LaneComponent.js",
+        "./InteractionManager.js": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.2/InteractionManager.js",
+        "./interactions/": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.2/interactions/",
+        "./utils/": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.2/utils/",
+        "./LayoutConfig.js": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.2/LayoutConfig.js",
+        "./ViewportEngine.js": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.2/ViewportEngine.js",
+        "./config.js": "./config.js"
     }
 }
