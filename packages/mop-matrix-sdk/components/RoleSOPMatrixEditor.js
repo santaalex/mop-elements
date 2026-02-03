@@ -3,7 +3,7 @@
  * 参考: prototype_rolepi_matrix.html (用户批准的设计)
  */
 
-import { MetricFormDrawer } from '../../mop-inspector-sdk/components/MetricFormDrawer.js';
+import { MetricFormDrawer } from '@mop/inspector-sdk/components/MetricFormDrawer.js';
 
 export class RoleSOPMatrixEditor {
     constructor(matrixView) {

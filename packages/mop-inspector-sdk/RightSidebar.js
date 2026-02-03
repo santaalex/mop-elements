@@ -2,7 +2,7 @@
 
 import { MetricCard } from './components/MetricCard.js';
 import { MetricForm } from './components/MetricForm.js';
-import { createMetric } from '../mop-metric-sdk/MetricCore.js';
+import { createMetric } from '@mop/metric-sdk';
 
 /**
  * RightSidebar Component / 右侧边栏组件

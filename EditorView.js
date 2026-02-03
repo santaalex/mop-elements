@@ -6,7 +6,7 @@ import { CanvasRenderer } from './CanvasRenderer.js';
 import { InteractionManager } from './interactions/InteractionManager.js';
 import { ViewportEngine } from 'mop-viewport';
 import { LayoutConfig } from './LayoutConfig.js';
-import { MatrixView } from './packages/mop-matrix-sdk/index.js'; // ✅ SDK Import
+import { MatrixView } from '@mop/matrix-sdk/MatrixView.js'; // ✅ Import Maps Alias
 
 // EXPOSE FOR SDK: Ensure Drag strategies use the same geometry as the renderer
 window.LayoutConfig = LayoutConfig;

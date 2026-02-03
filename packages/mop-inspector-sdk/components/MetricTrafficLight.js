@@ -6,7 +6,7 @@
  * 
  * @returns {string} HTML string
  */
-import { MetricStatus } from '../../mop-metric-sdk/MetricCore.js';
+import { MetricStatus } from '@mop/metric-sdk';
 
 const STATUS_COLORS = {
     [MetricStatus.Green]: '#10B981', // Emerald 500

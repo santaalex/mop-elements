@@ -1,0 +1,10 @@
+{
+    "imports": {
+        "@mop/metric-sdk": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.1/packages/mop-metric-sdk/MetricCore.js",
+        "@mop/inspector-sdk/": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.1/packages/mop-inspector-sdk/",
+        "@mop/matrix-sdk/": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.1/packages/mop-matrix-sdk/",
+        "@mop/gizmo-sdk": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.1/packages/mop-gizmo-sdk/index.js",
+        "@mop/drag-sdk": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.1/packages/mop-drag-sdk/index.js",
+        "@mop/interaction-sdk": "https://cdn.jsdelivr.net/gh/santaalex/mop-elements@v1.0.1/packages/mop-interaction-sdk/index.js"
+    }
+}

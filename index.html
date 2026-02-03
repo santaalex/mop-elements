@@ -10,6 +10,17 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono&display=swap"
         rel="stylesheet">
     <style>
+        :root {
+            /* Z-Index Scale (High-Star Best Practice) / 图层量表标准 */
+            --z-base: 0;
+            --z-canvas: 100;
+            --z-shell: 1000;
+            --z-popup: 2000;
+            --z-drawer: 5000;
+            --z-modal: 8000;
+            --z-system: 10000;
+        }
+
         body,
         html {
             margin: 0;
@@ -44,6 +55,38 @@
             background: #94a3b8;
         }
     </style>
+
+    <!-- ✅ Import Maps: Dynamic Path Management (Vite/Skypack Pattern) -->
+    <script>
+        // 🔧 Environment Switch: One-line toggle between local and CDN
+        const USE_CDN = true; // true = Production CDN, false = Local Development
+
+        // 📦 Dynamic Import Maps Loader (High-Star Best Practice)
+        (async function loadImportMaps() {
+            try {
+                const configPath = `./config/import-maps.${USE_CDN ? 'cdn' : 'local'}.json`;
+                const response = await fetch(configPath);
+
+                if (!response.ok) {
+                    throw new Error(`Failed to load Import Maps from ${configPath}`);
+                }
+
+                const importMaps = await response.json();
+
+                // Inject Import Map into document
+                const script = document.createElement('script');
+                script.type = 'importmap';
+                script.textContent = JSON.stringify(importMaps, null, 2);
+                document.head.appendChild(script);
+
+                console.log(`✅ Import Maps loaded: ${USE_CDN ? 'CDN (Production)' : 'Local (Development)'}`);
+                console.log('📍 Module Aliases:', Object.keys(importMaps.imports));
+            } catch (error) {
+                console.error('❌ Failed to load Import Maps:', error);
+                console.warn('⚠️ Falling back to relative paths');
+            }
+        })();
+    </script>
 </head>
 
 <body>
@@ -104,6 +147,14 @@
         // Root entry
         const router = new Router(routes);
         window.router = router; // Expose for interactions
+    </script>
+
+    <!-- Sidebar Integration -->
+    <script type="module">
+        import { RightSidebar } from './RightSidebar.js';
+        // Initialize as a global instance / 初始化为全局实例
+        window.sidebarInstance = new RightSidebar();
+        console.log('RightSidebar integrated.');
     </script>
 </body>
 

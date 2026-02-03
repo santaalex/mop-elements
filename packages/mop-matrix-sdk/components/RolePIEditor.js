@@ -9,7 +9,7 @@
  * 3. Quality PIs (Good result?)
  */
 
-import { MetricFormDrawer } from '../../mop-inspector-sdk/components/MetricFormDrawer.js';
+import { MetricFormDrawer } from '@mop/inspector-sdk/components/MetricFormDrawer.js';
 
 export class RolePIEditor {
     constructor(matrixView) {

@@ -1,0 +1,10 @@
+{
+  "imports": {
+    "@mop/metric-sdk": "./packages/mop-metric-sdk/MetricCore.js",
+    "@mop/inspector-sdk/": "./packages/mop-inspector-sdk/",
+    "@mop/matrix-sdk/": "./packages/mop-matrix-sdk/",
+    "@mop/gizmo-sdk": "./packages/mop-gizmo-sdk/index.js",
+    "@mop/drag-sdk": "./packages/mop-drag-sdk/index.js",
+    "@mop/interaction-sdk": "./packages/mop-interaction-sdk/index.js"
+  }
+}

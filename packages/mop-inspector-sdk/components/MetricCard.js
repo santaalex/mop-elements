@@ -7,7 +7,7 @@
  * @returns {string} HTML string
  */
 import { MetricTrafficLight } from './MetricTrafficLight.js';
-import { formatMetricValue, calcMetricStatus, MetricDirection } from '../../mop-metric-sdk/MetricCore.js';
+import { formatMetricValue, calcMetricStatus, MetricDirection } from '@mop/metric-sdk';
 
 /**
  * @param {Object} props

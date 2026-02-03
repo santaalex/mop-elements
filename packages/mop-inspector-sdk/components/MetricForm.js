@@ -4,7 +4,7 @@
  * 编辑器组件：创建或修改指标
  * Editor Component: Create or edit metrics
  */
-import { createMetric, MetricDirection } from '../../mop-metric-sdk/MetricCore.js';
+import { createMetric, MetricDirection } from '@mop/metric-sdk';
 
 export class MetricForm {
     /**
