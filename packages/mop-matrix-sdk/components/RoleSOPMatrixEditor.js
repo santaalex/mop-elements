@@ -12,10 +12,18 @@ export class RoleSOPMatrixEditor {
         this.activity = null;
         this.roles = [];
         this.overlay = null;
+        this.isOpen = false;  // ✅ Singleton flag (Ant Design pattern)
     }
 
     open(context) {
+        // ✅ Prevent duplicate instances (Bootstrap Modal pattern)
+        if (this.isOpen) {
+            console.warn('[RoleSOPMatrixEditor] Already open, closing first...');
+            this.close();
+        }
+
         this.activityId = context.activityId;
+        this.isOpen = true;  // ✅ Mark as open
         this.loadData();
         this.render();
     }
@@ -653,10 +661,22 @@ export class RoleSOPMatrixEditor {
     }
 
     close() {
-        // ✅ Remove ESC listener
+        // ✅ Prevent duplicate close (idempotent)
+        if (!this.isOpen) {
+            console.warn('[RoleSOPMatrixEditor] Already closed, ignoring...');
+            return;
+        }
+
+        // Remove ESC listener
         if (this.escHandler) {
             document.removeEventListener('keydown', this.escHandler);
         }
+
+        // Remove overlay
         this.overlay?.remove();
+        this.overlay = null;
+
+        this.isOpen = false;  // ✅ Mark as closed
+        console.log('[RoleSOPMatrixEditor] Closed successfully');
     }
 }
