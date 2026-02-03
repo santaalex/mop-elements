@@ -6,6 +6,7 @@ import { CanvasRenderer } from './CanvasRenderer.js';
 import { InteractionManager } from './interactions/InteractionManager.js';
 import { ViewportEngine } from 'mop-viewport';
 import { LayoutConfig } from './LayoutConfig.js';
+import { MatrixView } from './packages/mop-matrix-sdk/index.js'; // ✅ SDK Import
 
 // EXPOSE FOR SDK: Ensure Drag strategies use the same geometry as the renderer
 window.LayoutConfig = LayoutConfig;
@@ -13,16 +14,6 @@ window.LayoutConfig = LayoutConfig;
 
 /**
  * MoP Editor Controller (The Orchestrator)
- * 
- * Responsibilities:
- * 1. Data Cycle: Loads Project -> Updates Graph Data -> Saves to API.
- * 2. Component Assembly: Initializes Viewport, Renderer, and InteractionManager.
- * 3. Command Handling: Toolbar actions (Add Node, Add Lane).
- * 
- * Architecture Note:
- * This class DOES NOT handle low-level events (mousedown/move). 
- * Those are delegated to `interactions/InteractionManager.js`.
- * This class DOES NOT draw DOM. That is delegated to `CanvasRenderer.js`.
  */
 export class EditorView {
     constructor() {
@@ -36,6 +27,8 @@ export class EditorView {
         this.projectService = new ProjectService();
         this.renderer = null;
         this.gizmoRenderer = null; // Interface Painter
+        this.matrixView = null; // <--- Matrix Instance
+        this.viewMode = 'canvas'; // 'canvas' | 'matrix'
     }
 
     async mount(container, params) {
@@ -44,8 +37,11 @@ export class EditorView {
         this.container = container;
         container.innerHTML = this.template();
 
+        // ✅ Expose globally for RightSidebar and other components
+        window.editorInstance = this;
+        console.log('✅ [EditorView] Exposed as window.editorInstance');
+
         // Setup Layers
-        // Store scene reference for coordinate calculation
         this.scene = container.querySelector('#mop-scene');
         const viewportRoot = container.querySelector('#mop-viewport-root'); // Grab Root
 
@@ -58,20 +54,15 @@ export class EditorView {
         gizmoLayer.style.width = '100%';
         gizmoLayer.style.height = '100%';
         gizmoLayer.style.pointerEvents = 'none'; // Pass through clicks to nodes
-        gizmoLayer.style.zIndex = '2000'; // Above nodes
+        gizmoLayer.style.zIndex = 'var(--z-popup)'; // Above nodes / 节点上方
 
-        // BUG FIX: Attach to Viewport Root, NOT Scene. 
-        // Scene gets cleared by CanvasRenderer, Root does not.
         viewportRoot.appendChild(gizmoLayer);
 
         // 1. Init Viewport
-        // We need to wait for DOM to be ready
         requestAnimationFrame(async () => {
             this.initViewport();
-            await this.loadProject();
+            await this.loadProject(); // Loads data
             this.setupToolbar();
-
-            // DIAGNOSTICS REMOVED: System Stabilized
         });
     }
 
@@ -84,51 +75,64 @@ export class EditorView {
             </style>
             <div class="editor-layout h-screen w-screen flex overflow-hidden bg-slate-50">
                 <!-- 1. Toolbar (Left) -->
-                <div class="toolbar w-16 bg-white border-r border-slate-200 flex flex-col items-center py-4 z-20 shadow-sm transition-all duration-300">
+                <div class="toolbar w-16 bg-white border-r border-slate-200 flex flex-col items-center py-4 z-[var(--z-shell)] shadow-sm transition-all duration-300">
                     <div class="mb-6 font-bold text-indigo-600 text-xl">M</div>
                     
-                    <!-- Tools -->
-                    <button id="tool-pointer" class="w-10 h-10 rounded bg-slate-100 flex items-center justify-center mb-2 text-indigo-600 shadow-inner" title="Pointer">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" /></svg>
+                    <!-- View Switcher -->
+                    <button id="btn-view-canvas" class="w-10 h-10 rounded bg-indigo-100 text-indigo-600 flex items-center justify-center mb-1 shadow-inner" title="Canvas View">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" /></svg>
                     </button>
-                    <!-- L2 Tools (Hidden by default in L1) -->
-                    <div id="l2-tools" class="flex flex-col items-center w-full" style="display: none;">
-                        <button id="btn-add-lane" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors" title="Add Swimlane">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" /></svg>
+                    <button id="btn-view-matrix" class="w-10 h-10 rounded hover:bg-slate-100 text-slate-400 flex items-center justify-center mb-6 transition-colors" title="Matrix View (L3)">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7-8v8m14-8v8M3 6l9-4 9 4M4 10h16v8a2 2 0 01-2 2H6a2 2 0 01-2-2v-8z" /></svg>
+                    </button>
+
+                    <!-- Divider -->
+                    <div class="w-8 h-px bg-slate-200 mb-4"></div>
+
+                    <!-- Tools (Canvas Only) -->
+                    <div id="canvas-tools" class="flex flex-col items-center w-full">
+                        <button id="tool-pointer" class="w-10 h-10 rounded bg-slate-100 flex items-center justify-center mb-2 text-indigo-600 shadow-inner" title="Pointer">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" /></svg>
+                        </button>
+                        <!-- L2 Tools (Hidden by default in L1) -->
+                        <div id="l2-tools" class="flex flex-col items-center w-full" style="display: none;">
+                            <button id="btn-add-lane" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors" title="Add Swimlane">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" /></svg>
+                            </button>
+                        </div>
+                        <!-- Common Tools -->
+                        <button id="btn-add-node" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors" title="Add Process Node (Activity)">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                        </button>
+
+                        <!-- BPMN Tools (Start/End) -->
+                        <button id="btn-add-start" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors" title="Start Event">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-width="1.5"></circle></svg>
+                        </button>
+                        <button id="btn-add-end" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors" title="End Event">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-width="3"></circle></svg>
+                        </button>
+
+                        <!-- BPMN Gateways -->
+                        <button id="btn-add-xor" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors" title="XOR Gateway (Exclusive)">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 2l10 10-10 10L2 12z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 8l8 8m0-8l-8 8"></path></svg>
+                        </button>
+                        <button id="btn-add-and" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors" title="AND Gateway (Parallel)">
+                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 2l10 10-10 10L2 12z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 7v10M7 12h10"></path></svg>
+                        </button>
+                        <button id="btn-add-or" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors" title="OR Gateway (Inclusive)">
+                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 2l10 10-10 10L2 12z"></path><circle cx="12" cy="12" r="5" stroke-width="1.5"></circle></svg>
+                        </button>
+                         <!-- Drill Down Button (Explicit) -->
+                        <button id="btn-drill-down" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-indigo-600 transition-colors" title="Open Detail View (Drill Down)">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                         </button>
                     </div>
-                    <!-- Common Tools -->
-                    <button id="btn-add-node" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors" title="Add Process Node (Activity)">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                    </button>
 
-                    <!-- BPMN Tools (Start/End) -->
-                    <button id="btn-add-start" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors" title="Start Event">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-width="1.5"></circle></svg>
-                    </button>
-                    <button id="btn-add-end" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors" title="End Event">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-width="3"></circle></svg>
-                    </button>
-
-                    <!-- BPMN Gateways -->
-                    <button id="btn-add-xor" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors" title="XOR Gateway (Exclusive)">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 2l10 10-10 10L2 12z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 8l8 8m0-8l-8 8"></path></svg>
-                    </button>
-                    <button id="btn-add-and" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors" title="AND Gateway (Parallel)">
-                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 2l10 10-10 10L2 12z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 7v10M7 12h10"></path></svg>
-                    </button>
-                    <button id="btn-add-or" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors" title="OR Gateway (Inclusive)">
-                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 2l10 10-10 10L2 12z"></path><circle cx="12" cy="12" r="5" stroke-width="1.5"></circle></svg>
-                    </button>
-
-                    <!-- Drill Down Button (Explicit) -->
-                    <button id="btn-drill-down" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-indigo-600 transition-colors" title="Open Detail View (Drill Down)">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                    </button>
                     
                     <div class="flex-grow"></div>
 
-                    <!-- Botton Tools (User corrected: Save is here) -->
+                    <!-- Layout Tools -->
                     <button id="btn-save" class="w-10 h-10 rounded bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center mb-2 shadow-lg shadow-indigo-500/20 transition-all active:scale-95" title="Save Project (L1/L2)">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
                     </button>
@@ -138,7 +142,6 @@ export class EditorView {
                 </div>
 
                 <!-- 2. Canvas Area -->
-
                 <div id="mop-viewport" class="flex-1 relative overflow-hidden cursor-grab active:cursor-grabbing bg-slate-100">
                     
                     <!-- BREADCRUMB BAR (Top Overlay) -->
@@ -245,6 +248,10 @@ export class EditorView {
         } else {
             console.error('[EditorView] #mop-gizmo-layer NOT FOUND in DOM');
         }
+
+        // ✅ Initialize MatrixView (L3 Matrix Editor Support)
+        this.matrixView = new MatrixView(this);
+        console.log('[EditorView] MatrixView initialized');
     }
 
     async loadProject() {
@@ -274,6 +281,24 @@ export class EditorView {
                 } catch (e) {
                     console.error('Invalid JSON canvas data', e);
                 }
+            }
+
+            // ✅ Load Matrix Data into MatrixView
+            if (this.projectData.matrixData) {
+                try {
+                    const matrixData = JSON.parse(this.projectData.matrixData);
+                    this.matrixView.data = matrixData;
+                    console.log('✅ [EditorView] Matrix data loaded:', {
+                        roles: Object.keys(matrixData.roles || {}).length,
+                        assignments: matrixData.assignments?.length || 0
+                    });
+                } catch (e) {
+                    console.error('❌ Invalid JSON matrix data', e);
+                    this.matrixView.data = { roles: {}, assignments: [] };
+                }
+            } else {
+                console.log('🟡 [EditorView] No matrix data, initializing empty');
+                this.matrixView.data = { roles: {}, assignments: [] };
             }
 
             this.renderer.render(this.graphData);
@@ -437,6 +462,13 @@ export class EditorView {
             this.renderer.render(this.graphData);
         };
 
+        // --- NEW: View Switching ---
+        const btnViewCanvas = document.getElementById('btn-view-canvas');
+        if (btnViewCanvas) btnViewCanvas.onclick = () => this.toggleView('canvas');
+
+        const btnViewMatrix = document.getElementById('btn-view-matrix');
+        if (btnViewMatrix) btnViewMatrix.onclick = () => this.toggleView('matrix');
+
         // Drill Down Button
         const btnDrill = document.getElementById('btn-drill-down');
         if (btnDrill) {
@@ -451,29 +483,120 @@ export class EditorView {
         }
 
         // Save Button (SSOT Mode)
-        document.getElementById('btn-save').onclick = async () => {
-            const btn = document.getElementById('btn-save');
-            const originalIcon = btn.innerHTML;
+        const btnSave = document.getElementById('btn-save');
+        if (btnSave) {
+            btnSave.onclick = async () => {
+                await this.save();
+            };
+        }
+    }
+
+    /**
+     * Save Project Data to Mingdao V3
+     */
+    async save() {
+        console.log('[EditorView] Saving Project...');
+        const btn = document.getElementById('btn-save');
+        let originalIcon = '';
+
+        if (btn) {
+            originalIcon = btn.innerHTML;
             btn.innerHTML = '<svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
+        }
 
-            try {
-                // Serialize SSOT to string
-                const jsonString = JSON.stringify(this.graphData);
-                const success = await this.projectService.saveCanvas(this.projectId, jsonString);
+        try {
+            // Serialize SSOT to string
+            const canvasJsonString = JSON.stringify(this.graphData);
 
-                if (success) {
+            // Handle Matrix Data (Mix of Object or String)
+            let matrixJsonString = this.projectData.matrixData;
+            // Ensure matrixData is stringified if it's an object
+            if (typeof matrixJsonString === 'object') {
+                matrixJsonString = JSON.stringify(matrixJsonString);
+            }
+
+            // Prepare Update Payload
+            const updates = [
+                { id: this.projectService.ENV_CONFIG.FIELDS.CANVAS_DATA, value: canvasJsonString },
+                { id: this.projectService.ENV_CONFIG.FIELDS.MATRIX_DATA, value: matrixJsonString }
+            ];
+
+            // Use updateRow logic here (manual reconstruction as ProjectService.saveCanvas is limited)
+            const success = await this.projectService.updateRow(
+                this.projectService.ENV_CONFIG.WORKSHEET_ID,
+                this.projectId,
+                updates
+            );
+
+            if (success) {
+                console.log('[EditorView] Save Success');
+                if (btn) {
                     btn.classList.add('bg-green-600', 'shadow-green-500/50');
                     setTimeout(() => btn.classList.remove('bg-green-600', 'shadow-green-500/50'), 1500);
-                } else {
-                    alert('Save Failed');
                 }
-            } catch (e) {
-                console.error(e);
-                alert('Save Error: ' + e.message);
-            } finally {
-                btn.innerHTML = originalIcon;
+            } else {
+                alert('Save Failed');
             }
-        };
+        } catch (e) {
+            console.error(e);
+            alert('Save Error: ' + e.message);
+        } finally {
+            if (btn) btn.innerHTML = originalIcon || '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>';
+        }
+    }
+
+    /**
+     * Switch between Canvas and Matrix views
+     */
+    toggleView(mode) {
+        this.viewMode = mode;
+        const viewport = this.container.querySelector('#mop-viewport');
+        // We need a specific container for Matrix
+        let mContainer = document.getElementById('mop-matrix-container');
+
+        // Reset Styles
+        const btnCanvas = document.getElementById('btn-view-canvas');
+        const btnMatrix = document.getElementById('btn-view-matrix');
+
+        if (btnCanvas) btnCanvas.className = `w-10 h-10 rounded flex items-center justify-center mb-1 shadow-inner transition-colors ${mode === 'canvas' ? 'bg-indigo-100 text-indigo-600' : 'hover:bg-slate-100 text-slate-400'}`;
+        if (btnMatrix) btnMatrix.className = `w-10 h-10 rounded flex items-center justify-center mb-6 transition-colors ${mode === 'matrix' ? 'bg-indigo-100 text-indigo-600 shadow-inner' : 'hover:bg-slate-100 text-slate-400'}`;
+
+        if (mode === 'matrix') {
+            // Hide Canvas
+            if (viewport) viewport.style.display = 'none';
+
+            // Allow MatrixView to mount itself
+            if (!mContainer) {
+                mContainer = document.createElement('div');
+                mContainer.id = 'mop-matrix-container';
+                mContainer.className = 'flex-1 overflow-hidden bg-slate-50';
+                const layout = this.container.querySelector('.editor-layout');
+                if (layout) layout.appendChild(mContainer);
+            }
+            if (mContainer) mContainer.style.display = 'block';
+
+            if (!this.matrixView) {
+                this.matrixView = new MatrixView(this);
+            }
+            this.matrixView.mount(mContainer);
+
+            // Hide Canvas-specific tools
+            const tools = document.getElementById('canvas-tools');
+            if (tools) tools.style.display = 'none';
+
+        } else {
+            // Show Canvas
+            if (viewport) viewport.style.display = 'block';
+            // Hide Matrix
+            if (mContainer) mContainer.style.display = 'none';
+
+            // Show Canvas tools
+            const tools = document.getElementById('canvas-tools');
+            if (tools) tools.style.display = 'flex';
+
+            // Re-render canvas to ensure size is correct
+            if (this.viewport) this.viewport.update();
+        }
     }
 
     /**
@@ -703,8 +826,22 @@ export class EditorView {
 
     handleNodeDblClick({ id, nativeEvent }) {
         console.log(`[EditorView] Business Trigger: Node Double-Clicked ID=${id}`);
-        console.log(`[EditorView] Action: Open L3 Modal for Node ${id}`);
-        if (window.openL3Modal) window.openL3Modal(id);
+
+        // ✅ Get node type
+        const node = this.graphData.nodes.find(n => n.id === id);
+
+        if (node && node.type === 'activity') {
+            console.log(`[EditorView] Opening L3 Matrix for Activity ${id}`);
+            // Open L3 Multi-Role SOP Matrix
+            if (this.matrixView && this.matrixView.roleSOPMatrixEditor) {
+                this.matrixView.roleSOPMatrixEditor.open({ activityId: id });
+            } else {
+                console.error('[EditorView] MatrixView not initialized!');
+            }
+        } else {
+            console.log(`[EditorView] Action: Open L3 Modal for Node ${id}`);
+            if (window.openL3Modal) window.openL3Modal(id);
+        }
     }
 
     /**
@@ -728,6 +865,45 @@ export class EditorView {
             }
         });
     }
+
+    /**
+     * Save Project (graphData + matrixData to Mingdao Cloud)
+     * Called by MatrixEditor, RightSidebar, or Save button
+     */
+    async save() {
+        if (!this.projectId || !this.projectData) {
+            console.warn('[EditorView] Cannot save: missing projectId or projectData');
+            return false;
+        }
+
+        try {
+            // 1. Sync matrixData from MatrixView
+            if (this.matrixView && this.matrixView.data) {
+                this.projectData.matrixData = this.matrixView.data;
+            }
+
+            // 2. Call ProjectService
+            const result = await this.projectService.saveProject(
+                this.projectId,
+                this.graphData,
+                this.projectData.matrixData || { roles: {}, assignments: [] }
+            );
+
+            if (result.success) {
+                console.log('✅ [EditorView] Project saved successfully');
+                return true;
+            } else {
+                console.error('❌ [EditorView] Save failed:', result);
+                alert('保存失败，请重试');
+                return false;
+            }
+        } catch (error) {
+            console.error('[EditorView] Save error:', error);
+            alert('保存失败: ' + error.message);
+            return false;
+        }
+    }
+
     /**
      * Updates the UI based on Project Context (L1 vs L2)
      */
