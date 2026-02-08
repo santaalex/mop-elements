@@ -6,6 +6,10 @@ import { CanvasRenderer } from './CanvasRenderer.js';
 import { InteractionManager } from './interactions/InteractionManager.js';
 import { ViewportEngine } from 'mop-viewport';
 import { LayoutConfig } from './LayoutConfig.js';
+import { RoleSOPMatrixEditor } from '@mop/matrix-sdk/';
+import { EditorController } from './interactions/EditorController.js';
+import { MockMingdaoService } from './MockMingdaoService.js';
+import { Modal } from 'mop-modal'; // ✅ CDN 导入到 CDN
 
 // EXPOSE FOR SDK: Ensure Drag strategies use the same geometry as the renderer
 window.LayoutConfig = LayoutConfig;
@@ -13,30 +17,32 @@ window.LayoutConfig = LayoutConfig;
 
 /**
  * MoP Editor Controller (The Orchestrator)
- * 
- * Responsibilities:
- * 1. Data Cycle: Loads Project -> Updates Graph Data -> Saves to API.
- * 2. Component Assembly: Initializes Viewport, Renderer, and InteractionManager.
- * 3. Command Handling: Toolbar actions (Add Node, Add Lane).
- * 
- * Architecture Note:
- * This class DOES NOT handle low-level events (mousedown/move). 
- * Those are delegated to `interactions/InteractionManager.js`.
- * This class DOES NOT draw DOM. That is delegated to `CanvasRenderer.js`.
  */
 export class EditorView {
     constructor() {
-        this.projectId = null;
-        this.projectData = null;
-        this.graphData = { lanes: [], nodes: [] }; // The SSOT
+        // Phase 2 Step 1: Initialize Controller
+        this.controller = new EditorController(this);
+
         this.renderer = null;
         this.viewport = null;
         this.dragState = null;
         this.selection = new Set(); // Selection State (Set of Node IDs)
         this.projectService = new ProjectService();
+        this.mockService = new MockMingdaoService(); // <--- Mock Service for Data Middle Platform
+        this.simulationInterval = null; // Timer for data loop
         this.renderer = null;
         this.gizmoRenderer = null; // Interface Painter
+        this.roleSOPMatrixEditor = null; // <--- L3 Matrix Editor Instance
+        this.viewMode = 'canvas'; // 'canvas' | 'matrix'
     }
+
+    // Phase 2 Step 2: SSOT Getters/Setters
+    get projectId() { return this.controller.model.projectId; }
+    set projectId(val) { this.controller.model.projectId = val; }
+    get projectData() { return this.controller.model.projectData; }
+    set projectData(val) { this.controller.model.projectData = val; }
+    get graphData() { return this.controller.model.graphData; }
+    set graphData(val) { this.controller.model.graphData = val; }
 
     async mount(container, params) {
         console.log('[EditorView] Mounting...', params);
@@ -44,8 +50,11 @@ export class EditorView {
         this.container = container;
         container.innerHTML = this.template();
 
+        // ✅ Expose globally for RightSidebar and other components
+        window.editorInstance = this;
+        console.log('✅ [EditorView] Exposed as window.editorInstance');
+
         // Setup Layers
-        // Store scene reference for coordinate calculation
         this.scene = container.querySelector('#mop-scene');
         const viewportRoot = container.querySelector('#mop-viewport-root'); // Grab Root
 
@@ -58,20 +67,15 @@ export class EditorView {
         gizmoLayer.style.width = '100%';
         gizmoLayer.style.height = '100%';
         gizmoLayer.style.pointerEvents = 'none'; // Pass through clicks to nodes
-        gizmoLayer.style.zIndex = '2000'; // Above nodes
+        gizmoLayer.style.zIndex = 'var(--z-popup)'; // Above nodes / 节点上方
 
-        // BUG FIX: Attach to Viewport Root, NOT Scene. 
-        // Scene gets cleared by CanvasRenderer, Root does not.
         viewportRoot.appendChild(gizmoLayer);
 
         // 1. Init Viewport
-        // We need to wait for DOM to be ready
         requestAnimationFrame(async () => {
             this.initViewport();
-            await this.loadProject();
+            await this.loadProject(); // Loads data
             this.setupToolbar();
-
-            // DIAGNOSTICS REMOVED: System Stabilized
         });
     }
 
@@ -84,33 +88,92 @@ export class EditorView {
             </style>
             <div class="editor-layout h-screen w-screen flex overflow-hidden bg-slate-50">
                 <!-- 1. Toolbar (Left) -->
-                <div class="toolbar w-16 bg-white border-r border-slate-200 flex flex-col items-center py-4 z-20 shadow-sm transition-all duration-300">
-                    <div class="mb-6 font-bold text-indigo-600 text-xl">M</div>
-                    
-                    <!-- Tools -->
-                    <button id="tool-pointer" class="w-10 h-10 rounded bg-slate-100 flex items-center justify-center mb-2 text-indigo-600 shadow-inner" title="Pointer">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" /></svg>
-                    </button>
-                    <button id="btn-add-lane" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors" title="Add Lane">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" /></svg>
-                    </button>
-                    <button id="btn-add-node" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors" title="Add Process Node">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                    </button>
+                <div class="toolbar w-16 bg-white border-r border-slate-200 flex flex-col items-center py-4 z-[var(--z-shell)] shadow-sm transition-all duration-300">
+                    <!-- Tools (Canvas Only) -->
+                    <div id="canvas-tools" class="flex flex-col items-center w-full">
+                        <button id="tool-pointer" class="w-10 h-10 rounded bg-slate-100 flex items-center justify-center mb-2 text-indigo-600 shadow-inner" title="选择/移动">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" /></svg>
+                        </button>
+
+                        <!-- ═══════════════ Group 1: 泳道 (Swimlane) ═══════════════ -->
+                        <div class="w-8 h-px bg-slate-200 my-2"></div>
+                        <div id="l2-tools" class="flex flex-col items-center w-full">
+                            <button id="btn-add-lane" class="w-10 h-10 rounded hover:bg-cyan-50 flex items-center justify-center mb-2 text-cyan-600 transition-colors border border-transparent hover:border-cyan-200" title="添加泳道">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" /></svg>
+                            </button>
+                        </div>
+
+                        <!-- ═══════════════ Group 2: 动作节点 (Action Nodes) ═══════════════ -->
+                        <div class="w-8 h-px bg-slate-200 my-2"></div>
+                        <!-- Process Node: Indigo color, hierarchy/sub-process icon -->
+                        <button id="btn-add-process" class="w-10 h-10 rounded hover:bg-indigo-50 flex items-center justify-center mb-2 text-indigo-600 transition-colors border border-transparent hover:border-indigo-200" title="添加子流程 (可下钻)">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <rect x="3" y="3" width="8" height="6" rx="1" stroke-width="1.5"/>
+                                <rect x="13" y="15" width="8" height="6" rx="1" stroke-width="1.5"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 9v3a2 2 0 002 2h4M17 12v3"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 11l-2 2 2 2"/>
+                            </svg>
+                        </button>
+                        <!-- Activity Node: Emerald color, task/checklist icon -->
+                        <button id="btn-add-activity" class="w-10 h-10 rounded hover:bg-emerald-50 flex items-center justify-center mb-2 text-emerald-600 transition-colors border border-transparent hover:border-emerald-200" title="添加活动 (配置 SOP)">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <rect x="4" y="4" width="16" height="16" rx="2" stroke-width="1.5"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4"/>
+                            </svg>
+                        </button>
+
+                        <!-- ═══════════════ Group 3: 开始/结束 (Start/End) ═══════════════ -->
+                        <div class="w-8 h-px bg-slate-200 my-2"></div>
+                        <button id="btn-add-start" class="w-10 h-10 rounded hover:bg-green-50 flex items-center justify-center mb-2 text-green-600 transition-colors border border-transparent hover:border-green-200" title="开始">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-width="1.5"></circle></svg>
+                        </button>
+                        <button id="btn-add-end" class="w-10 h-10 rounded hover:bg-rose-50 flex items-center justify-center mb-2 text-rose-600 transition-colors border border-transparent hover:border-rose-200" title="结束">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-width="3"></circle></svg>
+                        </button>
+
+                        <!-- ═══════════════ Group 4: 网关 (Gateways) ═══════════════ -->
+                        <div class="w-8 h-px bg-slate-200 my-2"></div>
+                        <button id="btn-add-xor" class="w-10 h-10 rounded hover:bg-amber-50 flex items-center justify-center mb-2 text-amber-600 transition-colors border border-transparent hover:border-amber-200" title="排他网关 (XOR)">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 2l10 10-10 10L2 12z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 8l8 8m0-8l-8 8"></path></svg>
+                        </button>
+                        <button id="btn-add-and" class="w-10 h-10 rounded hover:bg-amber-50 flex items-center justify-center mb-2 text-amber-600 transition-colors border border-transparent hover:border-amber-200" title="并行网关 (AND)">
+                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 2l10 10-10 10L2 12z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 7v10M7 12h10"></path></svg>
+                        </button>
+                        <button id="btn-add-or" class="w-10 h-10 rounded hover:bg-amber-50 flex items-center justify-center mb-2 text-amber-600 transition-colors border border-transparent hover:border-amber-200" title="相容网关 (OR)">
+                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 2l10 10-10 10L2 12z"></path><circle cx="12" cy="12" r="5" stroke-width="1.5"></circle></svg>
+                        </button>
+
+                        <!-- ═══════════════ Group 5: 动作下钻 (Drill Down) ═══════════════ -->
+                        <div class="w-8 h-px bg-slate-200 my-2"></div>
+                        <button id="btn-drill-down" class="w-10 h-10 rounded hover:bg-violet-50 flex items-center justify-center mb-2 text-violet-600 transition-colors border border-transparent hover:border-violet-200" title="进入详细视图 (下钻)">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                        </button>
+                    </div>
+
                     
                     <div class="flex-grow"></div>
 
-                    <!-- Botton Tools (User corrected: Save is here) -->
-                    <button id="btn-save" class="w-10 h-10 rounded bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center mb-2 shadow-lg shadow-indigo-500/20 transition-all active:scale-95" title="Save Project (L1/L2)">
+                    <!-- Layout Tools -->
+                    <button id="btn-save" class="w-10 h-10 rounded bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center mb-2 shadow-lg shadow-indigo-500/20 transition-all active:scale-95" title="保存项目">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
                     </button>
-                    <button id="btn-back" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center text-slate-500 transition-colors" title="Back to Dashboard">
+                    <button id="btn-back" class="w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center text-slate-500 transition-colors" title="返回仪表盘">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
                     </button>
                 </div>
 
                 <!-- 2. Canvas Area -->
                 <div id="mop-viewport" class="flex-1 relative overflow-hidden cursor-grab active:cursor-grabbing bg-slate-100">
+                    
+                    <!-- BREADCRUMB BAR (Top Overlay) -->
+                    <div id="breadcrumb-bar" class="absolute top-0 left-0 w-full h-12 bg-white/80 backdrop-blur border-b border-slate-200 z-30 flex items-center px-4 shadow-sm">
+                        <!-- Content Injected Dynamically -->
+                        <div class="flex items-center text-sm text-slate-600">
+                            <span class="hover:text-indigo-600 cursor-pointer font-medium" onclick="window.location.hash='#/dashboard'">首页</span>
+                            <span class="mx-2 text-slate-400">/</span>
+                            <span id="breadcrumb-content" class="flex items-center">加载中...</span>
+                        </div>
+                    </div>
                     <!-- mop-viewport-root is the ONLY element with .mop-canvas-content -->
                     <!-- This layer handles the CSS transform (scale/pan) -->
                     <div id="mop-viewport-root" class="mop-canvas-content absolute top-0 left-0 bg-white shadow-2xl" 
@@ -132,7 +195,7 @@ export class EditorView {
 
                     <!-- HUD / Overlays (Static, outside the transform) -->
                     <div class="absolute top-4 left-4 bg-white/90 backdrop-blur px-3 py-1.5 rounded-md shadow-sm border border-slate-200 text-xs font-mono text-slate-500 pointer-events-none selection:none z-20">
-                        <span id="project-title">Loading...</span> | Scale: <span id="viewport-scale">100%</span>
+                        <span id="project-title">加载中...</span> | 缩放: <span id="viewport-scale">100%</span>
                     </div>
                 </div>
             </div>
@@ -146,12 +209,36 @@ export class EditorView {
         // Initialize Atomic Interaction Manager
         this.interactionManager = new InteractionManager(this);
 
-        // --- DEV: Mode Toggle UI ---
+        // --- DEV: Mode Toggle UI & Mock Data UI ---
         const toggleBtn = document.createElement('div');
         toggleBtn.innerHTML = `
-            <div style="position: absolute; top: 10px; right: 10px; z-index: 9999; background: white; padding: 5px 10px; border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); display: flex; gap: 8px; align-items: center; font-family: monospace;">
-                <span id="mode-display" style="font-weight: bold; color: #00aaaa;">VIEW MODE</span>
-                <button id="mode-switch" style="cursor: pointer; padding: 4px 8px; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px;">Switch to EDIT</button>
+            <div style="position: absolute; top: 10px; right: 10px; z-index: 9999; display: flex; flex-direction: column; align-items: flex-end; gap: 8px;">
+                <!-- Mode Toggle -->
+                <div style="background: white; padding: 5px 10px; border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); display: flex; gap: 8px; align-items: center; font-family: monospace;">
+                    <span id="mode-display" style="font-weight: bold; color: #00aaaa;">预览模式</span>
+                    <button id="mode-switch" style="cursor: pointer; padding: 4px 8px; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px;">切换编辑模式</button>
+                </div>
+                
+                <!-- Data Simulator -->
+                <button id="btn-simulate-data" style="
+                    cursor: pointer; 
+                    padding: 6px 12px; 
+                    background: #10b981; 
+                    color: white; 
+                    border: none; 
+                    border-radius: 6px; 
+                    box-shadow: 0 2px 10px rgba(16, 185, 129, 0.2);
+                    font-family: monospace;
+                    font-weight: bold;
+                    transition: all 0.2s;
+                    display: flex; align-items: center; gap: 6px;
+                ">
+                    <svg style="width:16px;height:16px" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    连接数据中台
+                </button>
+                <div id="simulation-status" style="font-size: 10px; color: #64748b; font-family: monospace; display: none;">
+                    DATA LINK ACTIVE • 1.0Hz
+                </div>
             </div>
         `;
         this.container.appendChild(toggleBtn);
@@ -163,14 +250,15 @@ export class EditorView {
         toggleBtn.querySelector('#mode-switch').addEventListener('click', () => {
             const current = this.interactionManager.mode;
             const next = current === 'VIEW' ? 'EDIT' : 'VIEW';
+            this.interactionManager.deactivateStrategy();
             this.interactionManager.setMode(next);
 
             const display = toggleBtn.querySelector('#mode-display');
             const btn = toggleBtn.querySelector('#mode-switch');
 
-            display.textContent = `${next} MODE`;
+            display.textContent = `${next === 'VIEW' ? '预览' : '编辑'}模式`;
             display.style.color = next === 'VIEW' ? '#00aaaa' : '#aa00aa';
-            btn.textContent = next === 'VIEW' ? 'Switch to EDIT' : 'Switch to VIEW';
+            btn.textContent = next === 'VIEW' ? '切换编辑模式' : '切换预览模式';
 
             // Toggle Toolbar Visibility
             if (toolbar) {
@@ -178,9 +266,48 @@ export class EditorView {
             }
         });
 
+        // --- Data Simulation Logic ---
+        const simBtn = toggleBtn.querySelector('#btn-simulate-data');
+        const simStatus = toggleBtn.querySelector('#simulation-status');
+
+        simBtn.addEventListener('click', () => {
+            if (this.simulationInterval) {
+                // Stop
+                clearInterval(this.simulationInterval);
+                this.simulationInterval = null;
+                simBtn.innerHTML = `
+                    <svg style="width:16px;height:16px" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    连接数据中台
+                `;
+                simBtn.style.background = '#10b981'; // Green
+                simStatus.style.display = 'none';
+                console.log('[EditorView] Simulation Stopped');
+
+                // Clear KPIs (Optional - keep last state for visual persistence)
+            } else {
+                // Start
+                console.log('[EditorView] Starting Data Simulation...');
+                simBtn.innerHTML = `
+                    <svg style="width:16px;height:16px" fill="none" class="animate-spin" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                    断开连接
+                `;
+                simBtn.style.background = '#ef4444'; // Red
+                simStatus.style.display = 'block';
+
+                // Initial Fetch
+                this.fetchAndRenderKPIs();
+
+                // Loop
+                this.simulationInterval = setInterval(() => {
+                    this.fetchAndRenderKPIs();
+                }, 2000); // Update every 2 seconds
+            }
+        });
+
         // --- Unified Interaction System: Business Logic Wiring ---
         // Phase 2: View Mode Listeners
         this.interactionManager.on('node:click', (p) => this.handleNodeClick(p));
+        this.interactionManager.on('node:select', (p) => this.handleNodeSelect(p)); // [Phase 1 UX]
         this.interactionManager.on('node:dblclick', (p) => this.handleNodeDblClick(p));
 
         // LEGACY INTERACTIONS DISABLED - MIGRATED TO ATOMIC STRATEGIES
@@ -206,46 +333,138 @@ export class EditorView {
         } else {
             console.error('[EditorView] #mop-gizmo-layer NOT FOUND in DOM');
         }
+
+        // ✅ Initialize L3 Matrix Editor (Direct Injection)
+        this.roleSOPMatrixEditor = new RoleSOPMatrixEditor(this);
+        console.log('[EditorView] RoleSOPMatrixEditor initialized');
     }
 
     async loadProject() {
         const titleEl = document.getElementById('project-title');
 
         try {
-            // Optimization: If we can't change ProjectService (Locked), we have to fetch list.
-            const projects = await this.projectService.getProjects();
-            this.projectData = projects.find(p => String(p.id) === String(this.projectId));
+            // Phase 2 Step 3: Delegate to Controller
+            await this.controller.loadProject(this.projectId);
 
-            if (!this.projectData) {
-                alert('Project not found!');
-                window.location.hash = '#/dashboard';
-                return;
+            // View Layer: UI Updates
+            if (this.projectData) {
+                titleEl.innerText = this.projectData.name;
             }
 
-            titleEl.innerText = this.projectData.name;
-
-            // Load Canvas Data into SSOT
-            this.graphData = { lanes: [], nodes: [] };
-            if (this.projectData.canvasData) {
-                try {
-                    this.graphData = JSON.parse(this.projectData.canvasData);
-                    // Ensure structure
-                    this.graphData.lanes = this.graphData.lanes || [];
-                    this.graphData.nodes = this.graphData.nodes || [];
-                } catch (e) {
-                    console.error('Invalid JSON canvas data', e);
-                }
-            }
+            // ❌ MatrixView data sync removed (MatrixView deleted)
+            // RoleSOPMatrixEditor manages its own data directly
 
             this.renderer.render(this.graphData);
 
-            // Auto-fit (Simple center for now)
-            this.viewport.centerOn(1000, 500); // Approximate center of standard canvas
+            // Update UI Context (Breadcrumbs & Toolbar)
+            this.updateUIContext();
 
+            // Reset View to Top-Left (High Star Practice)
+            this.viewport.resetToOrigin(80, 1.0); // 80px padding for "Breathable" layout
+
+            // --- EXPOSE DRILL DOWN LOGIC ---
+            /**
+             * Phase 2 Step 4: Drill-down handler with Mode Check
+             */
+            this.setupDrillDownHandler();
         } catch (err) {
-            console.error('Refused to load project:', err);
-            titleEl.innerText = 'Error Loading Project';
+            console.error('[EditorView] Load Error:', err);
+            const titleEl = document.getElementById('project-title');
+            if (titleEl) titleEl.innerText = 'Error Loading Project';
         }
+    }
+
+    /**
+     * Phase 2 Step 4: Drill-down handler with Mode Check
+     */
+    setupDrillDownHandler() {
+        console.log('[EditorView] Initializing DrillDown Handler');
+        window.drillDown = async (nodeId) => {
+            console.log('[EditorView] DrillDown clicked:', nodeId);
+
+            // 0. Fetch Node (Crucial Fix for ReferenceError)
+            const node = this.controller.getNode(nodeId);
+            if (!node) {
+                console.error('[EditorView] Node not found:', nodeId);
+                return;
+            }
+
+            // 1. Check for existing Child Project (Navigation Priority)
+            let targetId = node.linkedProjectId;
+            // Clean up potentially corrupted IDs
+            if (typeof targetId === 'object' && targetId !== null) {
+                targetId = targetId.rowId || targetId.id || targetId.value || null;
+            }
+            if (targetId === '[object Object]') targetId = null;
+
+            if (targetId) {
+                // Scenario A: Child Project Exists -> Navigate Immediately
+                console.log(`[EditorView] Navigating to existing child project: ${targetId}`);
+                window.location.hash = `#/editor/${targetId}`;
+                return; // ✅ Exit early, skip mode checks
+            }
+
+            // 2. No Child Project -> Check Mode for Creation Flow
+            // Step 4.2: Mode Check Foundation
+            let currentMode = 'VIEW'; // Default safe mode
+            if (this.interactionManager && this.interactionManager.modeStateMachine) {
+                currentMode = this.interactionManager.modeStateMachine.currentState;
+            }
+            console.log('[EditorView] Current Mode:', currentMode);
+
+            // ✅ Best Practice (Figma): Single Warning + User Preference
+            if (currentMode === 'VIEW') {
+                // Check user preference
+                const hideWarning = localStorage.getItem('hideEmptyProcessWarning');
+                if (hideWarning === 'true') {
+                    console.log('[DrillDown] User chose to hide warning, skipping');
+                    return;
+                }
+
+                // Show warning with unified Modal API
+                Modal.warning({
+                    title: '该流程暂无子流程',
+                    content: `节点 "${node.label}" 尚未关联子流程。\n请切换到编辑模式以创建子流程。`,
+                    checkbox: {
+                        label: '不再显示此提示',
+                        key: 'hideEmptyProcessWarning'
+                    }
+                });
+                return;
+            }
+
+            // EDIT Mode: Create Child Project
+            if (currentMode === 'EDIT') {
+                Modal.confirm({
+                    title: '创建详细流程图',
+                    content: `是否为节点 "${node.label}" 创建详细流程图 (L2)?`,
+                    okText: '创建',
+                    cancelText: '取消',
+                    onOk: async () => {
+                        try {
+                            const newName = `${node.label} (详细)`;
+                            const newId = await this.controller.createChildProject(newName, this.projectId);
+
+                            // Update Model (SSOT)
+                            this.controller.updateNode(nodeId, { linkedProjectId: newId });
+
+                            // Save Changes
+                            await this.save();
+
+                            // Navigate
+                            window.location.hash = `#/editor/${newId}`;
+                            console.log('✅ [EditorView] Drill-Down Created & Navigated:', newId);
+                        } catch (e) {
+                            console.error('DrillDown Error:', e);
+                            Modal.error({
+                                title: '创建失败',
+                                content: '创建子流程失败: ' + e.message
+                            });
+                        }
+                    }
+                });
+            }
+        };
     }
 
     setupToolbar() {
@@ -261,7 +480,7 @@ export class EditorView {
 
             const newLane = {
                 id: 'lane-' + Date.now(),
-                name: 'New Swimlane',
+                name: '新泳道',
                 x: 100,
                 order: maxOrder + 1,
                 w: 1200,
@@ -275,45 +494,164 @@ export class EditorView {
             console.log(`[Editor] Added Lane ${newLane.id} with Order ${newLane.order}`);
         };
 
-        // Add Node
-        document.getElementById('btn-add-node').onclick = () => {
+        // Add Process Node (子流程 - 可下钻到 L2)
+        document.getElementById('btn-add-process').onclick = () => {
             const newNode = {
                 id: 'node-' + Date.now(),
                 type: 'process',
-                label: 'New Process',
-                x: 200,
+                label: '新建子流程',
+                x: 250,
                 y: 200,
                 status: 'normal'
             };
             this.graphData.nodes.push(newNode);
             this.renderer.render(this.graphData);
-            console.log('[Editor] Added Node:', newNode.id);
+            console.log('[Editor] Added Process Node:', newNode.id);
         };
+
+        // Add Activity Node (活动 - 配置 SOP)
+        document.getElementById('btn-add-activity').onclick = () => {
+            const newNode = {
+                id: 'node-' + Date.now(),
+                type: 'activity',
+                label: '新建活动',
+                x: 300,
+                y: 200,
+                status: 'normal'
+            };
+            this.graphData.nodes.push(newNode);
+            this.renderer.render(this.graphData);
+            console.log('[Editor] Added Activity Node:', newNode.id);
+        };
+
+        // Add Start Event
+        document.getElementById('btn-add-start').onclick = () => {
+            const newNode = { id: 'node-' + Date.now(), type: 'start', label: '开始', x: 100, y: 200 };
+            this.graphData.nodes.push(newNode);
+            this.renderer.render(this.graphData);
+        };
+        // Add End Event
+        document.getElementById('btn-add-end').onclick = () => {
+            const newNode = { id: 'node-' + Date.now(), type: 'end', label: '结束', x: 500, y: 200 };
+            this.graphData.nodes.push(newNode);
+            this.renderer.render(this.graphData);
+        };
+        // Add XOR Gateway
+        document.getElementById('btn-add-xor').onclick = () => {
+            const newNode = { id: 'node-' + Date.now(), type: 'xor', label: '网关', x: 350, y: 200 };
+            this.graphData.nodes.push(newNode);
+            this.renderer.render(this.graphData);
+        };
+        // Add AND Gateway
+        document.getElementById('btn-add-and').onclick = () => {
+            const newNode = { id: 'node-' + Date.now(), type: 'and', label: '并行', x: 400, y: 200 };
+            this.graphData.nodes.push(newNode);
+            this.renderer.render(this.graphData);
+        };
+        // Add OR Gateway
+        document.getElementById('btn-add-or').onclick = () => {
+            const newNode = { id: 'node-' + Date.now(), type: 'or', label: '相容', x: 450, y: 200 };
+            this.graphData.nodes.push(newNode);
+            this.renderer.render(this.graphData);
+        };
+
+
+
+        // Drill Down Button
+        const btnDrill = document.getElementById('btn-drill-down');
+        if (btnDrill) {
+            btnDrill.onclick = () => {
+                if (this.selection.size !== 1) {
+                    alert('请先选择一个节点');
+                    return;
+                }
+                const nodeId = [...this.selection][0];
+                if (window.drillDown) window.drillDown(nodeId);
+            };
+        }
 
         // Save Button (SSOT Mode)
-        document.getElementById('btn-save').onclick = async () => {
-            const btn = document.getElementById('btn-save');
-            const originalIcon = btn.innerHTML;
-            btn.innerHTML = '<svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
+        const btnSave = document.getElementById('btn-save');
+        if (btnSave) {
+            btnSave.onclick = async () => {
+                await this.save();
+            };
+        }
 
-            try {
-                // Serialize SSOT to string
-                const jsonString = JSON.stringify(this.graphData);
-                const success = await this.projectService.saveCanvas(this.projectId, jsonString);
+        // [Phase 1 UX] Properties Panel Toggle (Left Toolbar)
+        // Manual trigger for Side Panel in EDIT mode
+        const btnProps = document.createElement('button');
+        btnProps.id = 'btn-toggle-props';
+        btnProps.className = 'w-10 h-10 rounded hover:bg-slate-100 flex items-center justify-center mb-2 text-slate-500 transition-colors border border-transparent hover:border-slate-300';
+        btnProps.title = '属性面板 (选节点后开启)';
+        btnProps.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>`;
 
-                if (success) {
-                    btn.classList.add('bg-green-600', 'shadow-green-500/50');
-                    setTimeout(() => btn.classList.remove('bg-green-600', 'shadow-green-500/50'), 1500);
-                } else {
-                    alert('Save Failed');
-                }
-            } catch (e) {
-                console.error(e);
-                alert('Save Error: ' + e.message);
-            } finally {
-                btn.innerHTML = originalIcon;
+        // Insert before Save button (or at specific position)
+        if (btnSave && btnSave.parentNode) {
+            btnSave.parentNode.insertBefore(btnProps, btnSave);
+        }
+
+        btnProps.onclick = () => {
+            // 1. Get Selected Node
+            if (this.selection.size !== 1) {
+                // Toast or Alert
+                console.warn('[EditorView] No node selected for properties');
+                // Optional: Toggle sidebar closed if nothing selected?
+                return;
             }
+            const nodeId = [...this.selection][0];
+            console.log(`[EditorView] Manual Property Toggle: ${nodeId}`);
+            if (window.openSidebar) window.openSidebar(nodeId);
         };
+    }
+
+    /**
+     * Save Project Data to Mingdao V3
+     */
+    /**
+     * Switch between Canvas andMatrix views
+     */
+    toggleView(mode) {
+        this.viewMode = mode;
+        const viewport = this.container.querySelector('#mop-viewport');
+        // We need a specific container for Matrix
+        let mContainer = document.getElementById('mop-matrix-container');
+
+        // Reset Styles
+
+
+        if (mode === 'matrix') {
+            // Hide Canvas
+            if (viewport) viewport.style.display = 'none';
+
+            // ❌ Old MatrixView mount logic removed
+            if (!mContainer) {
+                mContainer = document.createElement('div');
+                mContainer.id = 'mop-matrix-container';
+                mContainer.className = 'flex-1 overflow-hidden bg-slate-50';
+                const layout = this.container.querySelector('.editor-layout');
+                if (layout) layout.appendChild(mContainer);
+            }
+
+            // ❌ MatrixView.mount() removed - L3 Matrix uses overlay pattern now
+
+            // Hide Canvas-specific tools
+            const tools = document.getElementById('canvas-tools');
+            if (tools) tools.style.display = 'none';
+
+        } else {
+            // Show Canvas
+            if (viewport) viewport.style.display = 'block';
+            // Hide Matrix
+            if (mContainer) mContainer.style.display = 'none';
+
+            // Show Canvas tools
+            const tools = document.getElementById('canvas-tools');
+            if (tools) tools.style.display = 'flex';
+
+            // Re-render canvas to ensure size is correct
+            if (this.viewport) this.viewport.update();
+        }
     }
 
     /**
@@ -420,11 +758,14 @@ export class EditorView {
         if (this.gizmoRenderer) {
             this.gizmoRenderer.render(this.selection);
         }
+
+        // 4. Auto-Save
+        this.debounceSave();
     }
 
     /**
      * Update an edge's data and re-render.
-     * @param {string} edgeId 
+     * @param {string} edgeId
      * @param {Object} partialData - e.g. { label: "Success", labelT: 0.8 }
      */
     updateEdge(edgeId, partialData) {
@@ -438,6 +779,9 @@ export class EditorView {
 
         // 2. Re-render
         this.renderer.render(this.graphData);
+
+        // Auto-Save
+        this.debounceSave();
     }
 
     /**
@@ -455,6 +799,55 @@ export class EditorView {
 
         // 2. Re-render
         this.renderer.render(this.graphData);
+
+        // Auto-Save
+        this.debounceSave();
+    }
+
+    /**
+     * Auto-Save with Debounce (High-Star Practice)
+     * Prevent API flooding during high-frequency interactions.
+     */
+    debounceSave() {
+        // 1. Clear existing timer
+        if (this._saveTimer) {
+            clearTimeout(this._saveTimer);
+        }
+
+        console.log('[EditorView] Change detected. Auto-save in 2s...');
+
+        // Optional: Visual Feedback here (e.g., make Save button yellow)
+        const btn = document.getElementById('btn-save');
+        if (btn) {
+            // Subtle indication that a save is pending could go here
+        }
+
+        // 2. Set new timer (2000ms)
+        this._saveTimer = setTimeout(async () => {
+            await this.save();
+            this._saveTimer = null;
+        }, 2000);
+    }
+
+    /**
+     * Data Loop: Fetch from Platform -> Update UI
+     */
+    async fetchAndRenderKPIs() {
+        if (!this.graphData || !this.graphData.nodes) return;
+
+        // 1. Get Node IDs/Codes
+        const nodeCodes = this.graphData.nodes.map(n => n.id);
+
+        // 2. Call Mock Service
+        try {
+            const data = await this.mockService.getRealTimeKPIs(nodeCodes);
+            console.log('[EditorView] Received Data Middle Platform packet:', data.length);
+
+            // 3. Selective Update (No Re-render)
+            this.renderer.updateNodeKPIs(data);
+        } catch (e) {
+            console.error('[EditorView] Data Middle Platform Error:', e);
+        }
     }
 
     /**
@@ -541,10 +934,56 @@ export class EditorView {
         }
     }
 
+    /**
+     * [Phase 1 UX] Edit Mode Selection Handler
+     * Just logs the selection. Visuals are handled by GizmoRenderer/Strategies.
+     */
+    handleNodeSelect({ id, nativeEvent }) {
+        console.log(`[EditorView] Node Selected (Edit Mode): ${id}`);
+        // No Sidebar Open!
+    }
+
     handleNodeDblClick({ id, nativeEvent }) {
         console.log(`[EditorView] Business Trigger: Node Double-Clicked ID=${id}`);
-        console.log(`[EditorView] Action: Open L3 Modal for Node ${id}`);
-        if (window.openL3Modal) window.openL3Modal(id);
+
+        // ✅ Get node type
+        const node = this.graphData.nodes.find(n => n.id === id);
+        if (!node) return;
+
+        console.log(`[EditorView] Node Type: ${node.type}`);
+
+        // Strategy V2: Switch on Node Type
+        if (node.type === 'process') {
+            // Scene 1: Sub-Process Node -> Drill Down
+            console.log('[EditorView] Process Node -> Delegating to DrillDown');
+            if (window.drillDown) {
+                window.drillDown(id);
+            }
+        }
+        else if (node.type === 'activity') {
+            // Scene 2: Activity Node -> Open L3 Matrix (SOP)
+            console.log(`[EditorView] Activity Node -> Opening L3 Matrix`);
+
+            // Get current mode from InteractionManager
+            const currentMode = this.interactionManager.mode;
+            const isReadOnly = (currentMode === 'VIEW');
+
+            console.log(`[EditorView] Current mode: ${currentMode}, readOnly: ${isReadOnly}`);
+
+            if (this.roleSOPMatrixEditor) {
+                this.roleSOPMatrixEditor.open(
+                    { activityId: id },
+                    { readOnly: isReadOnly }
+                );
+            } else {
+                console.error('[EditorView] RoleSOPMatrixEditor not initialized!');
+            }
+        }
+        else {
+            // Scene 3: Other Nodes (Start/End/Gateway) -> Default Property Modal (if any)
+            console.log(`[EditorView] Action: Open Default Property Modal for Node ${id}`);
+            if (window.openL3Modal) window.openL3Modal(id);
+        }
     }
 
     /**
@@ -567,5 +1006,94 @@ export class EditorView {
                 if (edge) edge.setAttribute('selected', 'true');
             }
         });
+    }
+
+    /**
+     * Save Project (graphData + matrixData to Mingdao Cloud)
+     * Called by MatrixEditor, RightSidebar, or Save button
+     */
+    /**
+     * Phase 2 Step 5: Save Project with UI Feedback
+     * Delegates to EditorController for logic, handles UI animation here.
+     */
+    async save() {
+        console.log('[EditorView] Saving Project...');
+        const btn = document.getElementById('btn-save');
+        let originalIcon = '';
+
+        // 1. UI: Start Loading Logic
+        if (btn) {
+            originalIcon = btn.innerHTML; // Save original icon (save disk)
+            // Spinner Icon
+            btn.innerHTML = '<svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
+        }
+
+        try {
+            // 2. Sync View State to Controller Model
+            // ❌ MatrixView→Model sync removed (RoleSOPMatrixEditor saves directly)
+
+            // 3. Delegate Save to Controller
+            // Controller handles serialization and API calls
+            await this.controller.save();
+
+            // 4. UI: Success Logic
+            console.log('✅ [EditorView] Save Success');
+            if (btn) {
+                btn.classList.add('bg-green-600', 'shadow-green-500/50');
+                // Checkmark Icon
+                btn.innerHTML = '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>';
+
+                // Reset after 1.5s
+                setTimeout(() => {
+                    btn.classList.remove('bg-green-600', 'shadow-green-500/50');
+                    // Retrieve original icon (which might have been lost if we didn't store it well? No, we have origIcon)
+                    // But in case the button was refreshed, we provide fallback.
+                    // Actually, let's just put back the Save Disk icon hardcoded to be safe or original.
+                    btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>';
+                }, 1500);
+            }
+
+            return true;
+        } catch (error) {
+            console.error('[EditorView] Save error:', error);
+            alert('保存失败: ' + error.message);
+            // UI: Error Reset
+            if (btn) btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>';
+            return false;
+        }
+    }
+
+    /**
+     * Updates the UI based on Project Context (L1 vs L2)
+     */
+    updateUIContext() {
+        if (!this.projectData) return;
+        const isL2 = !!this.projectData.parent; // Check if we have a parent
+
+        // 1. Update Breadcrumbs (Header)
+        const breadcrumbEl = document.getElementById('breadcrumb-content');
+        if (breadcrumbEl) {
+            let html = '';
+            if (isL2) {
+                // Show Parent Link
+                html += `
+                    <span class="hover:text-indigo-600 cursor-pointer text-indigo-500" 
+                          onclick="window.location.hash='#/editor/${this.projectData.parent.id}'">
+                          ${this.projectData.parent.name}
+                    </span>
+                    <span class="mx-2 text-slate-400">/</span>
+                `;
+            }
+            // Show Current Project
+            html += `<span class="font-bold text-slate-800">${this.projectData.name}</span>`;
+            breadcrumbEl.innerHTML = html;
+        }
+
+        // 2. Update Toolbar (Left)
+        // FIX: Swimlane tools now always visible (no L1/L2 distinction)
+        // const l2Tools = document.getElementById('l2-tools');
+        // if (l2Tools) {
+        //     l2Tools.style.display = isL2 ? 'flex' : 'none';
+        // }
     }
 }
